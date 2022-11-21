@@ -1,0 +1,82 @@
+name: linux
+
+on:
+  push:
+    branches: [ "main", "ci" ]
+  pull_request:
+    branches: [ "main", "ci" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cxx: [g++-10, clang++-11]
+        build_type: [Debug, Release]
+        coverage: [OFF]
+        std: [11]
+        include:
+          - cxx: clang++-11
+            build_type: Debug
+            coverage: ON
+            std: 11
+            install: sudo apt-get install --no-install-recommends -y llvm-11 lcov
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Cache external dependencies
+      id: cache-deps
+      uses: actions/cache@v3
+
+      env:
+        cache-name: cache-deps
+      with:
+        path: ${{github.workspace}}/build/_deps
+        key: ${{ runner.os }}-build-${{ env.cache-name }}
+        restore-keys: |
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
+    - name: Setup
+      run: |
+        ${{matrix.install}}
+
+    - name: Configure
+      env:
+        CXX: ${{matrix.cxx}}
+        CXXFLAGS: ${{matrix.cxxflags}}
+      run: |
+        cmake -B ${{github.workspace}}/build\
+              -DCMAKE_BUILD_TYPE=${{matrix.build_type}}\
+              -DCMAKE_CXX_STANDARD=${{matrix.std}}\
+              -DWEBXX_PEDANTIC=ON\
+              -DWEBXX_COVERAGE=${{matrix.coverage}}
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}}
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      run: ctest -C ${{matrix.build_type}} --rerun-failed --output-on-failure
+
+    - name: Gather coverage information
+      working-directory: ${{github.workspace}}/build
+      if: ${{ matrix.coverage == 'ON' }}
+      run: |
+        ln -s /usr/bin/llvm-cov-11 ${{github.workspace}}/build/gcov &&\
+        lcov --capture --directory .\
+             --gcov-tool ${{github.workspace}}/build/gcov\
+             --output-file ./coverage.info\
+             --include *webxx/include*
+
+    - name: Upload coverage to Codecov
+      if: ${{ matrix.coverage == 'ON' }}
+      uses: codecov/codecov-action@v3
+      with:
+        files: ${{github.workspace}}/build/coverage.info
+        fail_ci_if_error: true
+

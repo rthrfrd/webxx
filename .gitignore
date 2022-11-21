@@ -1,0 +1,5 @@
+.devcontainer
+.vscode
+build
+tmp
+.DS_Store

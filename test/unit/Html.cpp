@@ -23,7 +23,7 @@ TEST_SUITE("Attribute") {
         _class attribute{"big"};
 
         CHECK(std::string(attribute.name) == "class");
-        CHECK(attribute.values[0] == "big");
+        CHECK(attribute.values[0].valueOwned == "big");
 
         SUBCASE("String literal attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -36,7 +36,7 @@ TEST_SUITE("Attribute") {
         _class attribute{value};
 
         CHECK(std::string(attribute.name) == "class");
-        CHECK(attribute.values[0] == value);
+        CHECK(attribute.values[0].valueOwned == value);
 
         SUBCASE("Const char attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -49,7 +49,7 @@ TEST_SUITE("Attribute") {
         _class attribute{value};
 
         CHECK(std::string(attribute.name) == "class");
-        CHECK(attribute.values[0] == value);
+        CHECK(attribute.values[0].valueOwned == value);
 
         SUBCASE("Const char attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -61,8 +61,8 @@ TEST_SUITE("Attribute") {
         _class attribute{"big", "tall"};
 
         CHECK(std::string(attribute.name) == "class");
-        CHECK(attribute.values[0] == "big");
-        CHECK(attribute.values[1] == "tall");
+        CHECK(attribute.values[0].valueOwned == "big");
+        CHECK(attribute.values[1].valueOwned == "tall");
 
         SUBCASE("Const char attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -74,7 +74,7 @@ TEST_SUITE("Attribute") {
         _dataCustom customAttribute{"something"};
 
         CHECK(std::string(customAttribute.name) == "data-custom");
-        CHECK(customAttribute.values[0] == "something");
+        CHECK(customAttribute.values[0].valueOwned == "something");
 
         SUBCASE("Custom attribute can be rendered") {
             std::string rendered = render(customAttribute);

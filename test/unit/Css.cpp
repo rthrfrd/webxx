@@ -145,7 +145,7 @@ TEST_SUITE("CSS Stylesheet") {
             },
         };
 
-        CHECK(sheet->size() == 1);
+        CHECK(sheet.size() == 1);
 
         SUBCASE("Sheet with single rule can be rendered") {
             CHECK(render(sheet) == ".selector{color:red;}");
@@ -165,7 +165,7 @@ TEST_SUITE("CSS Stylesheet") {
             },
         };
 
-        CHECK(sheet->size() == 3);
+        CHECK(sheet.size() == 3);
 
         SUBCASE("Sheet with multiple rules can be rendered") {
             CHECK(render(sheet) == ".a{color:red;}.b{color:green;}.c{color:blue;}");

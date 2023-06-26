@@ -17,14 +17,14 @@ TEST_SUITE("Utility") {
     }
 
     TEST_CASE("Maybe include HTML") {
-        std::string will{"You will see me."};
-        std::string wont{"You won't see me."};
+        const std::string_view will{"You will see me."};
+        const std::string_view wont{"You won't see me."};
 
 
         SUBCASE("Maybe include HTML without forwarding") {
             dv myDiv{
-                maybe(false, [&wont] () { return wont; }),
-                maybe(true, [&will] () { return will; }),
+                maybe(false, [wont] () { return wont; }),
+                maybe(true, [will] () { return will; }),
             };
 
             CHECK(render(myDiv) == "<div>You will see me.</div>");
@@ -32,8 +32,8 @@ TEST_SUITE("Utility") {
 
         SUBCASE("Maybe include HTML with forwarding") {
             dv myDiv{
-                maybe(false, wont, [] (std::string &x) { return x; }),
-                maybe(true, will, [] (std::string &x) { return x; }),
+                maybe(false, wont, [] (const std::string_view x) { return x; }),
+                maybe(true, will, [] (const std::string_view x) { return x; }),
             };
 
             CHECK(render(myDiv) == "<div>You will see me.</div>");
@@ -102,6 +102,34 @@ TEST_SUITE("Utility") {
                 "<li>10 ways to leak memory</li>"
                 "<li>1 simple trick</li>"
                 "<li>Is C++ dead? 💀</li>"
+            "</ol>"
+        );
+    }
+
+    TEST_CASE("Using placholder") {
+        ol myList {
+            li { _ {"a"} },
+            li { _ {"b"} },
+            li { _ {"x"} },
+        };
+
+        auto transformer = [] (const std::string_view in, const std::string_view) -> const std::string_view {
+            if (in == "a") {
+                return "A";
+            }
+            else if (in == "b") {
+                return "B";
+            }
+            else {
+                return "?";
+            }
+        };
+
+        CHECK(render(myList, {false, transformer}) ==
+            "<ol>"
+                "<li>A</li>"
+                "<li>B</li>"
+                "<li>?</li>"
             "</ol>"
         );
     }

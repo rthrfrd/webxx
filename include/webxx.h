@@ -25,9 +25,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#include <cstddef>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -65,15 +67,44 @@ namespace Webxx { namespace internal {
 }}
 
 
+////|              |////
+////| Placeholders |////
+////|              |////
+
+
+namespace Webxx { namespace internal {
+
+    class Placeholder : public std::string {
+        public:
+        using std::string::string;
+    };
+
+    using PlaceholderPopulator = std::function<const std::string_view(const std::string_view, const std::string_view)>;
+
+    inline const std::string_view noopPopulator (const std::string_view value, const std::string_view) {
+        return value;
+    }
+
+    namespace exports {
+        using PlaceholderPopulator = PlaceholderPopulator;
+        using _ = Placeholder;
+    }
+}}
+
+
 ////|       |////
 ////|  CSS  |////
 ////|       |////
 
 
 namespace Webxx { namespace internal {
-    typedef const char* CssSelector;
+    typedef const std::string_view CssSelector;
     struct CssSelectors : std::vector<CssSelector> {
         CssSelectors(CssSelector selector) :
+            std::vector<CssSelector>{selector} {}
+        CssSelectors(const std::string &selector) :
+            std::vector<CssSelector>{selector} {}
+        CssSelectors(const char* selector) :
             std::vector<CssSelector>{selector} {}
         CssSelectors(std::initializer_list<CssSelector> &&selectors) :
             std::vector<CssSelector>{std::move(selectors)} {}
@@ -84,22 +115,40 @@ namespace Webxx { namespace internal {
     struct CssRule {
         const bool canNest;
         const char* label;
-        const std::string value;
+        const std::string_view value;
         const CssSelectors selectors;
         const CssRules children;
 
         template<typename ...T>
-        CssRule (CssSelectors &&tCssSelectors, T&& ...rules) :
-            canNest{true}, label{none}, value{none}, selectors{std::move(tCssSelectors)}, children{std::forward<T>(rules)...} {}
-        CssRule (bool tCanNest, const char* tLabel, std::string &&tValue, CssSelectors &&tCssSelectors, CssRules &&tChildren) :
-            canNest{tCanNest}, label{tLabel}, value{tValue}, selectors{std::move(tCssSelectors)}, children{std::move(tChildren)} {}
+        CssRule (
+            CssSelectors &&tCssSelectors,
+            T&& ...rules
+        ) :
+            canNest{true},
+            label{none},
+            value{none},
+            selectors{std::move(tCssSelectors)},
+            children{std::forward<T>(rules)...}
+        {}
+        CssRule (
+            bool tCanNest,
+            const char* tLabel,
+            const std::string_view tValue,
+            CssSelectors &&tCssSelectors,
+            CssRules &&tChildren
+        ) :
+            canNest{tCanNest},
+            label{tLabel},
+            value{tValue},
+            selectors{std::move(tCssSelectors)},
+            children{std::move(tChildren)}
+        {}
     };
 
     template<const char* NAME>
     struct CssProperty : CssRule {
-        template<typename V>
-        CssProperty (V&& tValue) :
-            CssRule{false, NAME, std::forward<V>(tValue), {}, {}} {}
+        CssProperty (const std::string_view tValue) :
+            CssRule{false, NAME, tValue, {}, {}} {}
     };
 
     template<const char* PREFIX>
@@ -114,19 +163,17 @@ namespace Webxx { namespace internal {
             CssRule{true, PREFIX, none, std::move(tSelectors), std::move(tChildren)} {}
     };
 
-    typedef std::shared_ptr<CssRules> CssRulesSharedPointer;
-    struct CssRulesShared : public CssRulesSharedPointer {
-        CssRulesShared () :
-            CssRulesSharedPointer(std::make_shared<CssRules>(CssRules())) {}
-        CssRulesShared (std::initializer_list<CssRule> rules) :
-            CssRulesSharedPointer(std::make_shared<CssRules>(CssRules{rules})) {}
+    struct CssVar : CssRule {
+        CssVar (const char* tName, const std::string_view tValue) :
+            CssRule{false, tName, tValue, {}, {}} {}
     };
 
     namespace exports {
         template<const char* NAME>
         using property = CssProperty<NAME>;
         using rule = CssRule;
-        using styles = CssRulesShared;
+        using styles = CssRules;
+        using prop = CssVar;
     }
 }}
 
@@ -140,22 +187,39 @@ namespace Webxx { namespace internal {
     constexpr char doctype[] = "<!doctype html>";
     constexpr char styleTag[] = "style";
 
+    struct HtmlAttributeValue {
+        const std::string valueOwned;
+        const std::string_view valueViewed;
+        const bool isPlaceholder;
+
+        HtmlAttributeValue () :
+            valueViewed{none}, isPlaceholder{false} {}
+        HtmlAttributeValue (const Placeholder &&tPlaceholder) :
+            valueOwned{std::move(tPlaceholder)}, isPlaceholder{true} {}
+        HtmlAttributeValue (const std::string &&tValue) :
+            valueOwned{std::move(tValue)}, isPlaceholder{false} {}
+        HtmlAttributeValue (const char *tValue) :
+            valueOwned{tValue}, isPlaceholder{false} {}
+        HtmlAttributeValue (const std::string &tValue) :
+            valueOwned{tValue}, isPlaceholder{false} {}
+        HtmlAttributeValue (const std::string_view tValue) :
+            valueViewed{tValue}, isPlaceholder{false} {}
+    };
+
     typedef const char* HtmlAttributeName;
     struct HtmlAttribute {
         const HtmlAttributeName name;
-        const std::vector<std::string> values;
+        const std::vector<HtmlAttributeValue> values;
     };
 
     template<HtmlAttributeName NAME>
     struct HtmlAttributeDefined : public HtmlAttribute {
         HtmlAttributeDefined () :
             HtmlAttribute{NAME, {}} {}
-        template <typename V>
-        HtmlAttributeDefined (V&& tValue) :
-            HtmlAttribute{NAME, {std::forward<V>(tValue)}} {}
-        template <typename ...V>
-        HtmlAttributeDefined (V&& ...tValues) :
-            HtmlAttribute{NAME, {std::forward<V>(tValues)...}} {}
+        HtmlAttributeDefined (HtmlAttributeValue tValue) :
+            HtmlAttribute{NAME, {std::move(tValue)}} {}
+        HtmlAttributeDefined (std::initializer_list<HtmlAttributeValue> tValues) :
+            HtmlAttribute{NAME, tValues} {}
     };
 
     typedef const char* TagName;
@@ -167,6 +231,7 @@ namespace Webxx { namespace internal {
         NONE = 0,
         CSS = 1,
         SCRIPT = 2,
+        PLACEHOLDER = 3,
     };
 
     struct HtmlNodeOptions {
@@ -176,38 +241,45 @@ namespace Webxx { namespace internal {
         CollectionTarget collectionTarget;
     };
 
-    struct Component;
-    typedef Component* ComponentPointer;
     typedef std::vector<HtmlAttribute> HtmlAttributes;
     struct HtmlNode;
     typedef std::vector<HtmlNode> HtmlNodes;
+    typedef std::string_view ComponentName;
 
     struct HtmlNode {
         const HtmlNodeOptions options{none, none, false, NONE};
         const HtmlAttributes attributes;
         const HtmlNodes children;
-        const std::string content;
-        const CssRules css{};
-        const ComponentPointer component{nullptr};
+        const std::string contentOwned;
+        const std::string_view contentViewed;
+        const CssRules css;
+        const ComponentName componentName;
 
-        HtmlNode (std::string &&tContent) :
-            content{std::move(tContent)} {}
-        HtmlNode (const std::string &tContent) :
-            content{tContent} {}
+        HtmlNode () {}
+        HtmlNode (const Placeholder &&tPlaceholder) :
+            options{none, none, false, PLACEHOLDER},
+            contentOwned{std::move(tPlaceholder)}
+        {}
+        HtmlNode (const std::string &&tContent) :
+            contentOwned{std::move(tContent)} {}
         HtmlNode (const char *tContent) :
-            content{tContent} {}
+            contentOwned{tContent} {}
+        HtmlNode (const std::string &tContent) :
+            contentOwned{tContent} {}
+        HtmlNode (const std::string_view tContent) :
+            contentViewed{tContent} {}
         HtmlNode (
             HtmlNodeOptions &&tOptions,
             HtmlAttributes &&tAttributes,
             HtmlNodes &&tChildren,
             CssRules &&tCss,
-            ComponentPointer tComponent
+            const ComponentName tComponentName
         ) :
             options{std::move(tOptions)},
             attributes{std::move(tAttributes)},
             children{std::move(tChildren)},
             css{std::move(tCss)},
-            component{tComponent}
+            componentName{tComponentName}
         {}
     };
 
@@ -219,24 +291,24 @@ namespace Webxx { namespace internal {
     >
     struct HtmlNodeDefined : public HtmlNode {
         HtmlNodeDefined () :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, {}, {}, nullptr} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, {}, {}, none} {}
         HtmlNodeDefined (std::initializer_list<HtmlNode> &&tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, std::move(tChildren), {}, nullptr} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, std::move(tChildren), {}, none} {}
         HtmlNodeDefined (HtmlNodes &&tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, std::move(tChildren), {}, nullptr} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, std::move(tChildren), {}, none} {}
         template<typename ...T>
         HtmlNodeDefined (HtmlAttributes &&tAttributes, T&& ...tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, std::move(tAttributes), {std::forward<T>(tChildren)...}, {}, nullptr} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, std::move(tAttributes), {std::forward<T>(tChildren)...}, {}, none} {}
     };
 
     struct HtmlStyleNode : HtmlNode {
         HtmlStyleNode () :
-            HtmlNode{{styleTag, none, false, NONE}, {}, {}, {}, nullptr} {}
+            HtmlNode{{styleTag, none, false, NONE}, {}, {}, {}, none} {}
         HtmlStyleNode (std::initializer_list<CssRule> &&tCss) :
-            HtmlNode{{styleTag, none, false, NONE}, {}, {}, std::move(tCss), nullptr} {}
+            HtmlNode{{styleTag, none, false, NONE}, {}, {}, std::move(tCss), none} {}
         template<typename ...T>
         HtmlStyleNode (HtmlAttributes &&tAttributes, T&& ...tCss) :
-            HtmlNode{{styleTag, none, false, NONE}, std::move(tAttributes), {}, {std::forward<T>(tCss)...}, nullptr} {}
+            HtmlNode{{styleTag, none, false, NONE}, std::move(tAttributes), {}, {std::forward<T>(tCss)...}, none} {}
     };
 
     namespace exports {
@@ -246,6 +318,9 @@ namespace Webxx { namespace internal {
         template<HtmlAttributeName NAME>
         using attr = HtmlAttributeDefined<NAME>;
 
+        using node = HtmlNode;
+        using nodes = HtmlNodes;
+        using children = std::initializer_list<HtmlNode>;
         using attrs = HtmlAttributes;
 
         // HTML special purpose nodes:
@@ -266,20 +341,8 @@ namespace Webxx { namespace internal {
 namespace Webxx { namespace internal {
 
     struct Component : public HtmlNode {
-        const std::string name{};
-        const CssRulesSharedPointer css{};
-
-        template<typename T, typename N>
-        Component (T&& tName, CssRulesShared &&tCss, N&& tHtml) :
-            HtmlNode({none, none, false, NONE}, {}, {std::forward<N>(tHtml)}, {}, this),
-            name{std::forward<T>(tName)},
-            css{std::move(tCss)}
-        {}
-        template<typename T, typename N>
-        Component (T&& tName, const CssRulesShared &tCss, N&& tHtml) :
-            HtmlNode({none, none, false, NONE}, {}, {std::forward<N>(tHtml)}, {}, this),
-            name{std::forward<T>(tName)},
-            css{tCss}
+        Component (const ComponentName tName, CssRules &&tCss, HtmlNode&& tRootNode) :
+            HtmlNode({none, none, false, NONE}, {}, {tRootNode}, std::move(tCss), tName)
         {}
     };
 
@@ -296,14 +359,13 @@ namespace Webxx { namespace internal {
 
 namespace Webxx { namespace internal {
     constexpr char componentScopePrefix[] = "data-c";
-    typedef const CssRules* CssRulesPointer;
 
     struct CollectedCss {
-        const ComponentPointer component;
-        CssRulesPointer css;
+        const ComponentName &componentName;
+        const CssRules &css;
 
         bool operator == (const CollectedCss &other) const noexcept {
-            return (other.component == component && other.css == css);
+            return (other.componentName == componentName);
         }
     };
 }}
@@ -311,21 +373,51 @@ namespace Webxx { namespace internal {
 template<>
 struct std::hash<Webxx::internal::CollectedCss> {
     std::size_t operator() (const Webxx::internal::CollectedCss &collectedCss) const noexcept {
-        std::size_t componentHash = std::hash<Webxx::internal::ComponentPointer>{}(collectedCss.component);
-        std::size_t cssHash = std::hash<Webxx::internal::CssRulesPointer>{}(collectedCss.css);
-        return componentHash ^ (cssHash << 1);
+        return std::hash<std::string_view>{}(collectedCss.componentName);
     }
 };
 
 namespace Webxx { namespace internal {
     typedef std::unordered_set<CollectedCss> CollectedCsses;
+    constexpr std::size_t renderBufferDefaultSize{16 * 1024};
+
+    struct RenderOptions {
+        bool hashComponentNames;
+        PlaceholderPopulator placeholderPopulator;
+        std::size_t renderBufferSize;
+
+        RenderOptions() :
+            hashComponentNames{false},
+            placeholderPopulator{noopPopulator},
+            renderBufferSize(renderBufferDefaultSize)
+            {}
+        RenderOptions(bool tHashComponentNames) :
+            hashComponentNames{tHashComponentNames},
+            placeholderPopulator{noopPopulator},
+            renderBufferSize(renderBufferDefaultSize)
+            {}
+        RenderOptions(bool tHashComponentNames, PlaceholderPopulator tPlaceholderPopulator) :
+            hashComponentNames{tHashComponentNames},
+            placeholderPopulator{tPlaceholderPopulator},
+            renderBufferSize(renderBufferDefaultSize)
+            {}
+        RenderOptions(bool tHashComponentNames, PlaceholderPopulator tPlaceholderPopulator, std::size_t tRenderBufferSize) :
+            hashComponentNames{tHashComponentNames},
+            placeholderPopulator{tPlaceholderPopulator},
+            renderBufferSize(tRenderBufferSize)
+            {}
+    };
 
     struct Collector {
-        CollectedCsses csses{};
+        CollectedCsses csses;
+        RenderOptions options;
+
+        Collector(const RenderOptions &tOptions) :
+            csses{}, options{tOptions} {};
 
         void collect (const HtmlNode* node) {
-            if (node->component) {
-                csses.insert({node->component, node->component->css.get()});
+            if (!node->componentName.empty() && !node->css.empty()) {
+                csses.insert({node->componentName, node->css});
             }
             this->collect(&node->children);
         }
@@ -339,27 +431,18 @@ namespace Webxx { namespace internal {
         void collect (const void*) {}
     };
 
-    template<size_t LEN>
-    std::string hash (std::string input) {
-        std::size_t hashI = std::hash<std::string>{}(input);
-        char hexString[LEN];
-        snprintf(hexString, LEN, "%x", static_cast<int>(hashI));
-        return std::string(hexString);
-    }
-
-    struct RenderOptions {
-        bool hashComponentNames;
-    };
-
     struct Renderer {
         Collector collector;
         std::string out;
         RenderOptions options;
 
-        Renderer(const Collector &tCollector, RenderOptions &&tOptions) :
-            collector{tCollector}, options{tOptions} {};
+        Renderer(const Collector &tCollector, const RenderOptions &tOptions) :
+            collector{tCollector}, options{tOptions}
+        {
+            out.reserve(options.renderBufferSize);
+        }
 
-        void render (const HtmlAttribute &attribute, ComponentPointer) {
+        void render (const HtmlAttribute &attribute, const ComponentName) {
             out.append(attribute.name);
             if (!attribute.values.empty()) {
                 out.append("=\"");
@@ -368,23 +451,31 @@ namespace Webxx { namespace internal {
                     if (shouldSeparate) {
                         out.append(" ");
                     }
-                    out.append(value);
+
+                    if (value.isPlaceholder) {
+                        out.append(options.placeholderPopulator(value.valueOwned, attribute.name));
+                    } else {
+                        out.append(value.valueOwned);
+                        out.append(value.valueViewed);
+                    }
+
                     shouldSeparate = true;
                 }
                 out.append("\"");
             }
         }
 
-        void render (const HtmlAttributes &attributes, ComponentPointer currentComponent) {
+        void render (const HtmlAttributes &attributes, const ComponentName currentComponent) {
             for (auto &attribute : attributes) {
                 out.append(" ");
                 render(attribute, currentComponent);
             }
         }
 
-        void render (const HtmlNode &node, ComponentPointer currentComponent) {
-            if (node.component) {
-                currentComponent = node.component;
+        void render (const HtmlNode &node, const ComponentName currentComponent) {
+            ComponentName nextComponent = currentComponent;
+            if (!node.componentName.empty()) {
+                nextComponent = node.componentName;
             }
 
             if (strlen(node.options.prefix)) {
@@ -395,35 +486,36 @@ namespace Webxx { namespace internal {
                 out.append("<");
                 out.append(node.options.tagName);
                 if (!node.attributes.empty()) {
-                    render(node.attributes, currentComponent);
+                    render(node.attributes, nextComponent);
                 }
                 if (node.options.selfClosing) {
                     out.append("/");
                 }
-                if (currentComponent) {
+                if (!nextComponent.empty()) {
                     out.append(" ");
                     out.append(componentScopePrefix);
-                    options.hashComponentNames ?
-                        out.append(hash<hashLen>(currentComponent->name)):
-                        out.append(currentComponent->name);
+                    out.append(nextComponent);
                 }
                 out.append(">");
             }
 
-            if (!node.content.empty()) {
-                out.append(node.content);
+            if (node.options.collectionTarget == PLACEHOLDER) {
+                out.append(options.placeholderPopulator(node.contentOwned, node.options.tagName));
+            } else {
+                out.append(node.contentOwned);
+                out.append(node.contentViewed);
             }
 
             if (!node.children.empty()) {
-                render(node.children, currentComponent);
+                render(node.children, nextComponent);
             }
 
-            if (!node.css.empty()) {
-                render(node.css, nullptr);
+            if (node.componentName.empty() && !node.css.empty()) {
+                render(node.css, none);
             }
 
             if (node.options.collectionTarget == CSS) {
-                render(collector.csses, currentComponent);
+                render(collector.csses, nextComponent);
             }
 
             if ((!node.options.selfClosing) && strlen(node.options.tagName)) {
@@ -433,40 +525,38 @@ namespace Webxx { namespace internal {
             }
         }
 
-        void render (const HtmlNodes &nodes, ComponentPointer currentComponent) {
+        void render (const HtmlNodes &nodes, const ComponentName currentComponent) {
             for (auto &node : nodes) {
                 render(node, currentComponent);
             }
         }
 
-        void render(const CssSelectors &selectors, ComponentPointer currentComponent) {
+        void render(const CssSelectors &selectors, const ComponentName currentComponent) {
             bool shouldSeparate = false;
             for (auto &selector : selectors) {
                 if (shouldSeparate) {
                     out.append(",");
                 }
 
-                if (currentComponent) {
+                out.append(selector);
+
+                if (!currentComponent.empty()) {
                     out.append("[");
                     out.append(componentScopePrefix);
-                    options.hashComponentNames ?
-                        out.append(hash<hashLen>(currentComponent->name)):
-                        out.append(currentComponent->name);
+                    out.append(currentComponent);
                     out.append("]");
                 }
-
-                out.append(selector);
                 shouldSeparate = true;
             }
         }
 
-        void render (const CssRule &rule, ComponentPointer currentComponent) {
+        void render (const CssRule &rule, const ComponentName currentComponent) {
             if (!rule.canNest) {
                 // Single line rule:
                 out.append(rule.label);
                 if (!rule.selectors.empty()) {
                     out.append(" ");
-                    render(rule.selectors, nullptr);
+                    render(rule.selectors, none);
                 }
                 if (!rule.value.empty()) {
                     out.append(":").append(rule.value);
@@ -477,7 +567,7 @@ namespace Webxx { namespace internal {
                 if(strlen(rule.label)) {
                     // @rule (has a label and selectors):
                     out.append(rule.label).append(" ");
-                    render(rule.selectors, nullptr);
+                    render(rule.selectors, none);
                 } else {
                     // Style rule (has no label, only selectors):
                     render(rule.selectors, currentComponent);
@@ -493,36 +583,37 @@ namespace Webxx { namespace internal {
             }
         }
 
-        void render (const CssRulesShared &css, ComponentPointer currentComponent) {
-            return render(*css, currentComponent);
-        }
-
-        void render (const CssRules &css, ComponentPointer currentComponent) {
+        void render (const CssRules &css, const ComponentName currentComponent) {
             for (auto &rule : css) {
                 render(rule, currentComponent);
             }
         }
 
-        void render (const CollectedCsses &csses, ComponentPointer) {
+        void render (const CollectedCsses &csses, const ComponentName) {
             for (auto &css : csses) {
-                render(*css.css, css.component);
+                render(css.css, css.componentName);
             }
         }
     };
 
     namespace exports {
         template<typename V>
-        Collector collect (V&& node) {
-            Collector collector;
+        Collector collect (V&& node, const RenderOptions &options) {
+            Collector collector(options);
             collector.collect(&node);
             return collector;
         }
 
+        template<typename V>
+        Collector collect (V&& node) {
+            return collect(std::forward<V>(node), {});
+        }
+
         template<typename T>
         std::string render (T&& thing, RenderOptions &&options) {
-            Collector collector = collect(thing);
-            Renderer renderer(collector, std::move(options));
-            renderer.render(std::forward<T>(thing), nullptr);
+            Collector collector = collect(thing, options);
+            Renderer renderer(collector, options);
+            renderer.render(std::forward<T>(thing), none);
             return renderer.out;
         }
 
@@ -533,9 +624,9 @@ namespace Webxx { namespace internal {
 
         template<typename T>
         std::string renderCss (T&& thing, RenderOptions &&options) {
-            Collector collector = collect(thing);
-            Renderer renderer(collector, std::move(options));
-            renderer.render(collector.csses, nullptr);
+            Collector collector = collect(thing, options);
+            Renderer renderer(collector, options);
+            renderer.render(collector.csses, none);
             return renderer.out;
         }
 
@@ -563,6 +654,18 @@ namespace Webxx { namespace internal {
 
             for (auto &item : items) {
                 nodes.push_back(cb(item));
+            }
+
+            return fragment{std::move(nodes)};
+        }
+
+        template<typename C, typename T>
+        fragment each (T&& items) {
+            HtmlNodes nodes;
+            nodes.reserve(items.size());
+
+            for (auto &item : items) {
+                nodes.push_back(C{std::forward<typename T::value_type>(item)});
             }
 
             return fragment{std::move(nodes)};
@@ -960,6 +1063,7 @@ namespace Webxx {
     WEBXX_CSS_PROP_ALIAS(place-items, placeItems);
     WEBXX_CSS_PROP_ALIAS(place-self, placeSelf);
     WEBXX_CSS_PROP_ALIAS(play-during, playDuring);
+    WEBXX_CSS_PROP_ALIAS(pointer-events, pointerEvents);
     WEBXX_CSS_PROP(position);
     WEBXX_CSS_PROP_ALIAS(print-color-adjust, printColorAdjust);
     WEBXX_CSS_PROP(quotes);
@@ -1139,6 +1243,11 @@ namespace Webxx {
     WEBXX_HTML_EL(footer);
     WEBXX_HTML_EL(form);
     WEBXX_HTML_EL(h1);
+    WEBXX_HTML_EL(h2);
+    WEBXX_HTML_EL(h3);
+    WEBXX_HTML_EL(h4);
+    WEBXX_HTML_EL(h5);
+    WEBXX_HTML_EL(h6);
     WEBXX_HTML_EL(head);
     WEBXX_HTML_EL(header);
     WEBXX_HTML_EL_SELF_CLOSING(hr);
@@ -1220,6 +1329,8 @@ namespace Webxx {
     WEBXX_HTML_ATTR(async);
     WEBXX_HTML_ATTR(autocapitalize);
     WEBXX_HTML_ATTR(autocomplete);
+    WEBXX_HTML_ATTR(autocorrect);
+    WEBXX_HTML_ATTR(autofill);
     WEBXX_HTML_ATTR(autofocus);
     WEBXX_HTML_ATTR(autoplay);
     WEBXX_HTML_ATTR(buffered);

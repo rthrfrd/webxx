@@ -27,6 +27,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>

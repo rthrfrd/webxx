@@ -140,15 +140,50 @@ int main () {
 - The order in which component CSS styles are rendered cannot be relied upon due to the undefined order in which components may be initialised.
 - Over 700 symbols are exposed in the `Webxx` namespace - use it considerately.
 - Symbols are lowercased to mimic their typical appearance in HTML & CSS.
-- All `hy-phen-ated` tags, properties and attributes are translated to `camelCase`.
+- HTML attributes are all prefixed with `_` (e.g. `href` -> `_href`).
+- All `hy-phen-ated` tags, properties and attributes are translated to `camelCase` (e.g. `line-height` -> `lineHeight`).
 - All CSS `@*` rules are renamed to `at*` (e.g. `@import` -> `atImport`).
-- The following terms are aliased to avoid C++ keyword clashes:
+- The following terms are specially aliased to avoid C++ keyword clashes:
   - __HTML Elements:__
     - `div` -> `dv`
     - `template` -> `template_`
   - __CSS Properties:__
     - `continue` -> `continue_`
     - `float` -> `float_`
+
+## 🔥 Performance
+
+Some basic [benchmarks](test/benchmark/benchmark.cpp) are built at `build/test/benchmark/webxx_benchmark` using [google-benchmark](https://github.com/google/benchmark.git). Webxx appears to be ~5-30x faster than using a template language like [inja](https://github.com/pantor/inja).
+
+```sh
+# gcc-13 on macOS Ventura:
+Running build/test/benchmark/webxx_benchmark
+--------------------------------------------------------------------
+Benchmark                          Time             CPU   Iterations
+--------------------------------------------------------------------
+singleElementInja               9638 ns         9557 ns        71357
+singleElementWebxx               341 ns          341 ns      1966635
+singleElementSprintf             135 ns          135 ns      4925173
+singleElementStringAppend       69.0 ns         68.9 ns      9895112
+multiElementInja               11138 ns        11124 ns        59700
+multiElementWebxx               1768 ns         1765 ns       367132
+multiElementSprintf              199 ns          198 ns      3621183
+multiElementStringAppend         365 ns          363 ns      1952036
+
+# clang-14 on macOS Ventura:
+Running build/test/benchmark/webxx_benchmark
+--------------------------------------------------------------------
+Benchmark                          Time             CPU   Iterations
+--------------------------------------------------------------------
+singleElementInja               7089 ns         7052 ns        97962
+singleElementWebxx               266 ns          264 ns      2707292
+singleElementSprintf            77.3 ns         77.1 ns      8468835
+singleElementStringAppend       27.9 ns         27.9 ns     25437156
+multiElementInja                9613 ns         9597 ns        67738
+multiElementWebxx               1733 ns         1731 ns       385622
+multiElementSprintf              182 ns          182 ns      3780494
+multiElementStringAppend         221 ns          220 ns      2994178
+```
 
 ## 🛠 Development
 
@@ -166,7 +201,7 @@ Contributions are super welcome, in the form of pull requests from Github forks.
 
 - Add Mac & Windows builds.
 - Avoid repeated hashing of component names when using hashed names.
-- More benchmarking/testing (memory, libmxl2, variations).
+- More benchmarking/testing (memory, libmxl2, more usage variations).
 
 #### Later
 

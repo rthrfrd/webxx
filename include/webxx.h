@@ -28,9 +28,7 @@
 #include <cstddef>
 #include <cstring>
 #include <functional>
-#include <ios>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <typeinfo>
@@ -67,7 +65,6 @@
 
 namespace Webxx { namespace internal {
     constexpr char none[] = "";
-    constexpr size_t hashLen = 8;
 }}
 
 
@@ -415,27 +412,18 @@ namespace Webxx { namespace internal {
     constexpr std::size_t renderBufferDefaultSize{16 * 1024};
 
     struct RenderOptions {
-        bool hashComponentNames;
         PlaceholderPopulator placeholderPopulator;
         std::size_t renderBufferSize;
 
         RenderOptions() :
-            hashComponentNames{false},
             placeholderPopulator{noopPopulator},
             renderBufferSize(renderBufferDefaultSize)
             {}
-        RenderOptions(bool tHashComponentNames) :
-            hashComponentNames{tHashComponentNames},
-            placeholderPopulator{noopPopulator},
-            renderBufferSize(renderBufferDefaultSize)
-            {}
-        RenderOptions(bool tHashComponentNames, PlaceholderPopulator tPlaceholderPopulator) :
-            hashComponentNames{tHashComponentNames},
+        RenderOptions(PlaceholderPopulator tPlaceholderPopulator) :
             placeholderPopulator{tPlaceholderPopulator},
             renderBufferSize(renderBufferDefaultSize)
             {}
-        RenderOptions(bool tHashComponentNames, PlaceholderPopulator tPlaceholderPopulator, std::size_t tRenderBufferSize) :
-            hashComponentNames{tHashComponentNames},
+        RenderOptions(PlaceholderPopulator tPlaceholderPopulator, std::size_t tRenderBufferSize) :
             placeholderPopulator{tPlaceholderPopulator},
             renderBufferSize(tRenderBufferSize)
             {}
@@ -475,16 +463,7 @@ namespace Webxx { namespace internal {
             out.reserve(options.renderBufferSize);
         }
 
-        std::string hex (size_t t) {
-            std::ostringstream oss;
-            oss << std::hex << t;
-            return oss.str();
-        }
-
         const std::string componentName (ComponentType type) {
-            if (options.hashComponentNames) {
-                return hex(type);
-            }
             return std::to_string(type);
         }
 

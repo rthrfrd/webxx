@@ -125,7 +125,7 @@ TEST_SUITE("Utility") {
             }
         };
 
-        CHECK(render(myList, {false, transformer}) ==
+        CHECK(render(myList, {transformer}) ==
             "<ol>"
                 "<li>A</li>"
                 "<li>B</li>"

@@ -43,8 +43,8 @@ target_include_directories(yourApp PRIVATE your/path/to/webxx)
 ```c++
 // main.cpp
 #include <iostream>
+#include <list>
 #include <string>
-#include <vector>
 #include "webxx.h"
 
 int main () {
@@ -52,10 +52,21 @@ int main () {
 
     // Bring your own data model:
     bool is1MVisit = true;
+    std::list<std::string> toDoItems {
+        "Water plants",
+        "Plug (memory) leaks",
+        "Get back to that other project",
+    };
 
     // Create modular components which include scoped CSS:
+    struct ToDoItem : component<ToDoItem> {
+        ToDoItem (const std::string &toDoText) : component<ToDoItem> {
+            li { toDoText },
+        } {}
+    };
+
     struct ToDoList : component<ToDoList> {
-        ToDoList (std::vector<std::string> &&toDoItems) : component<ToDoList>{
+        ToDoList (std::list<std::string> &&toDoItems) : component<ToDoList>{
             // Styles apply only to the component's elements:
             {
                 {"ul",
@@ -67,18 +78,12 @@ int main () {
             dv {
                 h1 { "To-do:" },
                 // Iterate over iterators:
-                ul { each(toDoItems, [] (const std::string &item) {
-                    return li { item };
-                }) },
+                ul {
+                    each<ToDoItem>(std::move(toDoItems))
+                },
             },
         } {}
     };
-
-    ToDoList toDoList{{
-        "Water plants",
-        "Plug (memory) leaks",
-        "Get back to that other project",
-    }};
 
     // Compose a full page:
     doc page {
@@ -99,7 +104,7 @@ int main () {
                 // Set attributes:
                 {_class{"dark", is1MVisit ? "party" : ""}},
                 // Combine components, elements and text:
-                toDoList,
+                ToDoList{std::move(toDoItems)},
                 hr {},
                 // Optionally include fragments:
                 maybe(is1MVisit, [] () {

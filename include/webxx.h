@@ -365,13 +365,16 @@ namespace Webxx { namespace internal {
 
     template <class T>
     struct Component : public ComponentBase {
-        Component (CssRules &&tCss, HtmlNode&& tRootNode) :
-            ComponentBase(
-                typeid(T).hash_code(),
-                std::move(tCss),
-                std::move(tRootNode)
-            )
-        {}
+        Component (HtmlNode&& tRootNode) : ComponentBase(
+            typeid(T).hash_code(),
+            {},
+            std::move(tRootNode)
+        ) {}
+        Component (CssRules &&tCss, HtmlNode&& tRootNode) : ComponentBase(
+            typeid(T).hash_code(),
+            std::move(tCss),
+            std::move(tRootNode)
+        ) {}
     };
 
     namespace exports {

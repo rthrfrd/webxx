@@ -15,18 +15,6 @@ constexpr static char somethingElse[]{"Something else."};
 ////|                  |////
 
 
-std::string renderSingleElementWebxx (Input input) {
-    return render(h1{input});
-}
-
-static void singleElementWebxx (benchmark::State& state) {
-    for (auto _ : state) {
-        benchmark::DoNotOptimize(renderSingleElementWebxx(helloWorld));
-        benchmark::ClobberMemory();
-    }
-}
-BENCHMARK(singleElementWebxx);
-
 std::string renderSingleElementInja (Input input) {
     inja::json data;
     data["input"] = input;
@@ -41,9 +29,21 @@ static void singleElementInja (benchmark::State& state) {
 }
 BENCHMARK(singleElementInja);
 
+std::string renderSingleElementWebxx (Input input) {
+    return render(h1{input});
+}
+
+static void singleElementWebxx (benchmark::State& state) {
+    for (auto _ : state) {
+        benchmark::DoNotOptimize(renderSingleElementWebxx(helloWorld));
+        benchmark::ClobberMemory();
+    }
+}
+BENCHMARK(singleElementWebxx);
+
 std::string renderSingleElementSprintf (Input input) {
     char buffer[64];
-    sprintf(buffer, "<h1>%s</h1>", input);
+    snprintf(buffer, 64, "<h1>%s</h1>", input);
     return buffer;
 }
 
@@ -77,21 +77,6 @@ BENCHMARK(singleElementStringAppend);
 ////|                 |////
 
 
-std::string renderMultiElementWebxx (Input a, Input b, Input c) {
-    return render(dv{{_class{b}},
-        h1{a},
-        p{c},
-    });
-}
-
-static void multiElementWebxx (benchmark::State& state) {
-    for (auto _ : state) {
-        benchmark::DoNotOptimize(renderMultiElementWebxx(helloWorld, something, somethingElse));
-        benchmark::ClobberMemory();
-    }
-}
-BENCHMARK(multiElementWebxx);
-
 std::string renderMultiElementInja (Input a, Input b, Input c) {
     inja::json data;
     data["a"] = a;
@@ -108,9 +93,24 @@ static void multiElementInja (benchmark::State& state) {
 }
 BENCHMARK(multiElementInja);
 
+std::string renderMultiElementWebxx (Input a, Input b, Input c) {
+    return render(dv{{_class{b}},
+        h1{a},
+        p{c},
+    });
+}
+
+static void multiElementWebxx (benchmark::State& state) {
+    for (auto _ : state) {
+        benchmark::DoNotOptimize(renderMultiElementWebxx(helloWorld, something, somethingElse));
+        benchmark::ClobberMemory();
+    }
+}
+BENCHMARK(multiElementWebxx);
+
 std::string renderMultiElementSprintf (Input a, Input b, Input c) {
     char buffer[128];
-    sprintf(buffer, "<div class=\"%s\"><h1>%s</h1><p>%s</p></div>", b, a, c);
+    snprintf(buffer, 128, "<div class=\"%s\"><h1>%s</h1><p>%s</p></div>", b, a, c);
     return buffer;
 }
 

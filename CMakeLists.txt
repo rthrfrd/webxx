@@ -7,8 +7,13 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     set(MAIN_PROJECT ON)
 endif()
 
-option(WEBXX_BENCHMARK "Enable benchmarking targets (requires WEBXX_TEST=ON)" Off)
-option(WEBXX_COVERAGE "Enable code coverage reporting (requires WEBXX_TEST=ON)" Off)
+if(NOT "${CMAKE_CXX_STANDARD}")
+  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD_REQUIRED On)
+endif()
+
+option(WEBXX_BENCHMARK "Enable benchmarking targets (requires WEBXX_TEST=ON)" ${MAIN_PROJECT})
+option(WEBXX_COVERAGE "Enable code coverage reporting (requires WEBXX_TEST=ON)" ${MAIN_PROJECT})
 option(WEBXX_PEDANTIC "Enable extra checks" ${MAIN_PROJECT})
 option(WEBXX_TEST "Enable test targets" ${MAIN_PROJECT})
 
@@ -19,9 +24,6 @@ set(WEBXX_HEADERS include/${WEBXX_NAME}/${WEBXX_NAME}.h)
 add_library(${WEBXX_NAME} INTERFACE)
 add_library(${WEBXX_NS}::${WEBXX_NAME} ALIAS ${WEBXX_NAME})
 target_include_directories(${WEBXX_NAME} INTERFACE ${PROJECT_SOURCE_DIR}/include)
-
-set(TARGET ${WEBXX_NAME} PROPERTY CXX_STANDARD 11)
-set(TARGET ${WEBXX_NAME} PROPERTY CXX_STANDARD_REQUIRED On)
 
 set(PEDANTIC_FLAGS "")
 if (WEBXX_PEDANTIC)

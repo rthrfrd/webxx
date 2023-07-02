@@ -102,7 +102,7 @@ namespace Webxx { namespace internal {
 
 
 namespace Webxx { namespace internal {
-    typedef const std::string_view CssSelector;
+    typedef std::string_view CssSelector;
     struct CssSelectors : std::vector<CssSelector> {
         CssSelectors(CssSelector selector) :
             std::vector<CssSelector>{selector} {}
@@ -455,8 +455,8 @@ namespace Webxx { namespace internal {
             this->collect(&node->children);
         }
 
-        void collect (const HtmlNodes* nodes) {
-            for (auto &node : *nodes) {
+        void collect (const HtmlNodes* tNodes) {
+            for (auto &node : *tNodes) {
                 this->collect(&node);
             }
         }
@@ -574,8 +574,8 @@ namespace Webxx { namespace internal {
             }
         }
 
-        void render (const HtmlNodes &nodes, const ComponentType currentComponent) {
-            for (auto &node : nodes) {
+        void render (const HtmlNodes &tNodes, const ComponentType currentComponent) {
+            for (auto &node : tNodes) {
                 render(node, currentComponent);
             }
         }
@@ -647,15 +647,15 @@ namespace Webxx { namespace internal {
 
     namespace exports {
         template<typename V>
-        Collector collect (V&& node, const RenderOptions &options) {
+        Collector collect (V&& tNode, const RenderOptions &options) {
             Collector collector(options);
-            collector.collect(&node);
+            collector.collect(&tNode);
             return collector;
         }
 
         template<typename V>
-        Collector collect (V&& node) {
-            return collect(std::forward<V>(node), {});
+        Collector collect (V&& tNode) {
+            return collect(std::forward<V>(tNode), {});
         }
 
         template<typename T>
@@ -698,26 +698,26 @@ namespace Webxx { namespace internal {
 
         template<typename T, typename F>
         fragment each (T&& items, F&& cb) {
-            HtmlNodes nodes;
-            nodes.reserve(items.size());
+            HtmlNodes tNodes;
+            tNodes.reserve(items.size());
 
             for (auto &item : items) {
-                nodes.push_back(cb(item));
+                tNodes.push_back(cb(item));
             }
 
-            return fragment{std::move(nodes)};
+            return fragment{std::move(tNodes)};
         }
 
         template<typename C, typename T>
         fragment each (T&& items) {
-            HtmlNodes nodes;
-            nodes.reserve(items.size());
+            HtmlNodes tNodes;
+            tNodes.reserve(items.size());
 
             for (auto &item : items) {
-                nodes.push_back(C{std::forward<typename T::value_type>(item)});
+                tNodes.push_back(C{std::forward<typename T::value_type>(item)});
             }
 
-            return fragment{std::move(nodes)};
+            return fragment{std::move(tNodes)};
         }
 
         template<typename T, typename F>

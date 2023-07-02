@@ -52,31 +52,33 @@ int main () {
 
     // Bring your own data model:
     bool is1MVisit = true;
-    std::vector<std::string> toDoItems {
+
+    // Create modular components which include scoped CSS:
+    struct ToDoList : component<ToDoList> {
+        ToDoList (std::vector<std::string> &&toDoItems) : component<ToDoList>{
+            // Styles apply only to the component's elements:
+            {
+                {"ul",
+                    // Hyphenated properties are camelCased:
+                    listStyle{ "none" },
+                },
+            },
+            // Component HTML:
+            dv {
+                h1 { "To-do:" },
+                // Iterate over iterators:
+                ul { each(toDoItems, [] (const std::string &item) {
+                    return li { item };
+                }) },
+            },
+        } {}
+    };
+
+    ToDoList toDoList{{
         "Water plants",
         "Plug (memory) leaks",
         "Get back to that other project",
-    };
-
-    // Create modular components with scoped CSS:
-    component toDoList {
-        "toDoList",
-        // Styles apply only to the component's elements:
-        {
-            {"ul",
-                // Hyphenated properties are camelCased:
-                listStyle{ "none" },
-            },
-        },
-        // Component HTML:
-        dv {
-            h1 { "To-do:" },
-            // Iterate over iterators:
-            ul { each(toDoItems, [] (std::string &item) {
-                return li { item };
-            }) },
-        },
-    };
+    }};
 
     // Compose a full page:
     doc page {

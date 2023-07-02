@@ -28,9 +28,12 @@
 #include <cstddef>
 #include <cstring>
 #include <functional>
+#include <ios>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <typeinfo>
 #include <unordered_set>
 #include <vector>
 
@@ -188,23 +191,28 @@ namespace Webxx { namespace internal {
     constexpr char doctype[] = "<!doctype html>";
     constexpr char styleTag[] = "style";
 
+    enum class ValueType {
+        LITERAL = 0,
+        PLACEHOLDER = 1,
+    };
+
     struct HtmlAttributeValue {
         const std::string valueOwned;
         const std::string_view valueViewed;
-        const bool isPlaceholder;
+        const ValueType valueType;
 
         HtmlAttributeValue () :
-            valueViewed{none}, isPlaceholder{false} {}
+            valueViewed{none}, valueType{ValueType::LITERAL} {}
         HtmlAttributeValue (const Placeholder &&tPlaceholder) :
-            valueOwned{std::move(tPlaceholder)}, isPlaceholder{true} {}
+            valueOwned{std::move(tPlaceholder)}, valueType{ValueType::PLACEHOLDER} {}
         HtmlAttributeValue (const std::string &&tValue) :
-            valueOwned{std::move(tValue)}, isPlaceholder{false} {}
+            valueOwned{std::move(tValue)}, valueType{ValueType::LITERAL} {}
         HtmlAttributeValue (const char *tValue) :
-            valueOwned{tValue}, isPlaceholder{false} {}
+            valueOwned{tValue}, valueType{ValueType::LITERAL} {}
         HtmlAttributeValue (const std::string &tValue) :
-            valueOwned{tValue}, isPlaceholder{false} {}
+            valueOwned{tValue}, valueType{ValueType::LITERAL} {}
         HtmlAttributeValue (const std::string_view tValue) :
-            valueViewed{tValue}, isPlaceholder{false} {}
+            valueViewed{tValue}, valueType{ValueType::LITERAL} {}
     };
 
     typedef const char* HtmlAttributeName;
@@ -233,6 +241,7 @@ namespace Webxx { namespace internal {
         CSS = 1,
         SCRIPT = 2,
         PLACEHOLDER = 3,
+        VARIABLE = 4,
     };
 
     struct HtmlNodeOptions {
@@ -246,6 +255,7 @@ namespace Webxx { namespace internal {
     struct HtmlNode;
     typedef std::vector<HtmlNode> HtmlNodes;
     typedef std::string_view ComponentName;
+    typedef std::size_t ComponentType;
 
     struct HtmlNode {
         const HtmlNodeOptions options{none, none, false, NONE};
@@ -254,7 +264,7 @@ namespace Webxx { namespace internal {
         const std::string contentOwned;
         const std::string_view contentViewed;
         const CssRules css;
-        const ComponentName componentName;
+        const ComponentType componentType{0};
 
         HtmlNode () {}
         HtmlNode (const Placeholder &&tPlaceholder) :
@@ -274,13 +284,13 @@ namespace Webxx { namespace internal {
             HtmlAttributes &&tAttributes,
             HtmlNodes &&tChildren,
             CssRules &&tCss,
-            const ComponentName tComponentName
+            const ComponentType tComponentType
         ) :
             options{std::move(tOptions)},
             attributes{std::move(tAttributes)},
             children{std::move(tChildren)},
             css{std::move(tCss)},
-            componentName{tComponentName}
+            componentType{tComponentType}
         {}
     };
 
@@ -292,24 +302,24 @@ namespace Webxx { namespace internal {
     >
     struct HtmlNodeDefined : public HtmlNode {
         HtmlNodeDefined () :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, {}, {}, none} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, {}, {}, 0} {}
         HtmlNodeDefined (std::initializer_list<HtmlNode> &&tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, std::move(tChildren), {}, none} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, std::move(tChildren), {}, 0} {}
         HtmlNodeDefined (HtmlNodes &&tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, std::move(tChildren), {}, none} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, std::move(tChildren), {}, 0} {}
         template<typename ...T>
         HtmlNodeDefined (HtmlAttributes &&tAttributes, T&& ...tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, std::move(tAttributes), {std::forward<T>(tChildren)...}, {}, none} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, std::move(tAttributes), {std::forward<T>(tChildren)...}, {}, 0} {}
     };
 
     struct HtmlStyleNode : HtmlNode {
         HtmlStyleNode () :
-            HtmlNode{{styleTag, none, false, NONE}, {}, {}, {}, none} {}
+            HtmlNode{{styleTag, none, false, NONE}, {}, {}, {}, 0} {}
         HtmlStyleNode (std::initializer_list<CssRule> &&tCss) :
-            HtmlNode{{styleTag, none, false, NONE}, {}, {}, std::move(tCss), none} {}
+            HtmlNode{{styleTag, none, false, NONE}, {}, {}, std::move(tCss), 0} {}
         template<typename ...T>
         HtmlStyleNode (HtmlAttributes &&tAttributes, T&& ...tCss) :
-            HtmlNode{{styleTag, none, false, NONE}, std::move(tAttributes), {}, {std::forward<T>(tCss)...}, none} {}
+            HtmlNode{{styleTag, none, false, NONE}, std::move(tAttributes), {}, {std::forward<T>(tCss)...}, 0} {}
     };
 
     namespace exports {
@@ -341,14 +351,32 @@ namespace Webxx { namespace internal {
 
 namespace Webxx { namespace internal {
 
-    struct Component : public HtmlNode {
-        Component (const ComponentName tName, CssRules &&tCss, HtmlNode&& tRootNode) :
-            HtmlNode({none, none, false, NONE}, {}, {tRootNode}, std::move(tCss), tName)
+    struct ComponentBase : public HtmlNode {
+        ComponentBase (const ComponentType tType, CssRules &&tCss, HtmlNode&& tRootNode) :
+            HtmlNode(
+                {none, none, false, NONE},
+                {},
+                {tRootNode},
+                std::move(tCss),
+                tType
+            )
+        {}
+    };
+
+    template <class T>
+    struct Component : public ComponentBase {
+        Component (CssRules &&tCss, HtmlNode&& tRootNode) :
+            ComponentBase(
+                typeid(T).hash_code(),
+                std::move(tCss),
+                std::move(tRootNode)
+            )
         {}
     };
 
     namespace exports {
-        using component = Component;
+        template <class T>
+        using component = Component<T>;
     }
 }}
 
@@ -362,11 +390,11 @@ namespace Webxx { namespace internal {
     constexpr char componentScopePrefix[] = "data-c";
 
     struct CollectedCss {
-        const ComponentName &componentName;
+        const ComponentType &componentType;
         const CssRules &css;
 
         bool operator == (const CollectedCss &other) const noexcept {
-            return (other.componentName == componentName);
+            return (other.componentType == componentType);
         }
     };
 }}
@@ -374,9 +402,10 @@ namespace Webxx { namespace internal {
 template<>
 struct std::hash<Webxx::internal::CollectedCss> {
     std::size_t operator() (const Webxx::internal::CollectedCss &collectedCss) const noexcept {
-        return std::hash<std::string_view>{}(collectedCss.componentName);
+        return std::hash<std::size_t>{}(collectedCss.componentType);
     }
 };
+
 
 namespace Webxx { namespace internal {
     typedef std::unordered_set<CollectedCss> CollectedCsses;
@@ -417,8 +446,8 @@ namespace Webxx { namespace internal {
             csses{}, options{tOptions} {};
 
         void collect (const HtmlNode* node) {
-            if (!node->componentName.empty() && !node->css.empty()) {
-                csses.insert({node->componentName, node->css});
+            if (node->componentType && !node->css.empty()) {
+                csses.insert({node->componentType, node->css});
             }
             this->collect(&node->children);
         }
@@ -443,7 +472,20 @@ namespace Webxx { namespace internal {
             out.reserve(options.renderBufferSize);
         }
 
-        void render (const HtmlAttribute &attribute, const ComponentName) {
+        std::string hex (size_t t) {
+            std::ostringstream oss;
+            oss << std::hex << t;
+            return oss.str();
+        }
+
+        const std::string componentName (ComponentType type) {
+            if (options.hashComponentNames) {
+                return hex(type);
+            }
+            return std::to_string(type);
+        }
+
+        void render (const HtmlAttribute &attribute, const ComponentType) {
             out.append(attribute.name);
             if (!attribute.values.empty()) {
                 out.append("=\"");
@@ -453,11 +495,14 @@ namespace Webxx { namespace internal {
                         out.append(" ");
                     }
 
-                    if (value.isPlaceholder) {
-                        out.append(options.placeholderPopulator(value.valueOwned, attribute.name));
-                    } else {
-                        out.append(value.valueOwned);
-                        out.append(value.valueViewed);
+                    switch (value.valueType) {
+                        case ValueType::LITERAL:
+                            out.append(value.valueOwned);
+                            out.append(value.valueViewed);
+                            break;
+                        case ValueType::PLACEHOLDER:
+                            out.append(options.placeholderPopulator(value.valueOwned, attribute.name));
+                            break;
                     }
 
                     shouldSeparate = true;
@@ -466,17 +511,17 @@ namespace Webxx { namespace internal {
             }
         }
 
-        void render (const HtmlAttributes &attributes, const ComponentName currentComponent) {
+        void render (const HtmlAttributes &attributes, const ComponentType currentComponent) {
             for (auto &attribute : attributes) {
                 out.append(" ");
                 render(attribute, currentComponent);
             }
         }
 
-        void render (const HtmlNode &node, const ComponentName currentComponent) {
-            ComponentName nextComponent = currentComponent;
-            if (!node.componentName.empty()) {
-                nextComponent = node.componentName;
+        void render (const HtmlNode &node, const ComponentType currentComponent) {
+            ComponentType nextComponent = currentComponent;
+            if (node.componentType) {
+                nextComponent = node.componentType;
             }
 
             if (strlen(node.options.prefix)) {
@@ -492,10 +537,10 @@ namespace Webxx { namespace internal {
                 if (node.options.selfClosing) {
                     out.append("/");
                 }
-                if (!nextComponent.empty()) {
+                if (nextComponent) {
                     out.append(" ");
                     out.append(componentScopePrefix);
-                    out.append(nextComponent);
+                    out.append(componentName(nextComponent));
                 }
                 out.append(">");
             }
@@ -511,8 +556,8 @@ namespace Webxx { namespace internal {
                 render(node.children, nextComponent);
             }
 
-            if (node.componentName.empty() && !node.css.empty()) {
-                render(node.css, none);
+            if ((!node.componentType) && (!node.css.empty())) {
+                render(node.css, 0);
             }
 
             if (node.options.collectionTarget == CSS) {
@@ -526,13 +571,13 @@ namespace Webxx { namespace internal {
             }
         }
 
-        void render (const HtmlNodes &nodes, const ComponentName currentComponent) {
+        void render (const HtmlNodes &nodes, const ComponentType currentComponent) {
             for (auto &node : nodes) {
                 render(node, currentComponent);
             }
         }
 
-        void render(const CssSelectors &selectors, const ComponentName currentComponent) {
+        void render(const CssSelectors &selectors, const ComponentType currentComponent) {
             bool shouldSeparate = false;
             for (auto &selector : selectors) {
                 if (shouldSeparate) {
@@ -541,23 +586,23 @@ namespace Webxx { namespace internal {
 
                 out.append(selector);
 
-                if (!currentComponent.empty()) {
+                if (currentComponent) {
                     out.append("[");
                     out.append(componentScopePrefix);
-                    out.append(currentComponent);
+                    out.append(componentName(currentComponent));
                     out.append("]");
                 }
                 shouldSeparate = true;
             }
         }
 
-        void render (const CssRule &rule, const ComponentName currentComponent) {
+        void render (const CssRule &rule, const ComponentType currentComponent) {
             if (!rule.canNest) {
                 // Single line rule:
                 out.append(rule.label);
                 if (!rule.selectors.empty()) {
                     out.append(" ");
-                    render(rule.selectors, none);
+                    render(rule.selectors, 0);
                 }
                 if (!rule.value.empty()) {
                     out.append(":").append(rule.value);
@@ -568,7 +613,7 @@ namespace Webxx { namespace internal {
                 if(strlen(rule.label)) {
                     // @rule (has a label and selectors):
                     out.append(rule.label).append(" ");
-                    render(rule.selectors, none);
+                    render(rule.selectors, 0);
                 } else {
                     // Style rule (has no label, only selectors):
                     render(rule.selectors, currentComponent);
@@ -584,15 +629,15 @@ namespace Webxx { namespace internal {
             }
         }
 
-        void render (const CssRules &css, const ComponentName currentComponent) {
+        void render (const CssRules &css, const ComponentType currentComponent) {
             for (auto &rule : css) {
                 render(rule, currentComponent);
             }
         }
 
-        void render (const CollectedCsses &csses, const ComponentName) {
+        void render (const CollectedCsses &csses, const ComponentType) {
             for (auto &css : csses) {
-                render(css.css, css.componentName);
+                render(css.css, css.componentType);
             }
         }
     };
@@ -614,7 +659,7 @@ namespace Webxx { namespace internal {
         std::string render (T&& thing, RenderOptions &&options) {
             Collector collector = collect(thing, options);
             Renderer renderer(collector, options);
-            renderer.render(std::forward<T>(thing), none);
+            renderer.render(std::forward<T>(thing), 0);
             return renderer.out;
         }
 
@@ -627,7 +672,7 @@ namespace Webxx { namespace internal {
         std::string renderCss (T&& thing, RenderOptions &&options) {
             Collector collector = collect(thing, options);
             Renderer renderer(collector, options);
-            renderer.render(collector.csses, none);
+            renderer.render(collector.csses, 0);
             return renderer.out;
         }
 
@@ -686,6 +731,14 @@ namespace Webxx { namespace internal {
                 return fragment{{}, cb(std::forward<V>(forward))};
             }
             return fragment{};
+        }
+
+        template<typename T, typename F>
+        HtmlAttribute maybeAttr (T&& condition, F&& attr) {
+            if (condition) {
+                return attr;
+            }
+            return HtmlAttributeDefined<none>{};
         }
     }
 }}

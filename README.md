@@ -137,7 +137,7 @@ int main () {
 
 ### Quirks & inconsistencies
 
-- The order in which component CSS styles are rendered cannot be relied upon due to the undefined order in which components may be initialised.
+- The order in which CSS styles belonging to different components are rendered cannot be relied upon, due to the undefined order in which components may be initialised.
 - Over 700 symbols are exposed in the `Webxx` namespace - use it considerately.
 - Symbols are lowercased to mimic their typical appearance in HTML & CSS.
 - HTML attributes are all prefixed with `_` (e.g. `href` -> `_href`).
@@ -150,6 +150,174 @@ int main () {
   - __CSS Properties:__
     - `continue` -> `continue_`
     - `float` -> `float_`
+
+### Memory safety
+
+- As it is possible to render elements at a different time from constructing them, __you must make sure that the objects you reference in your document have not been destroyed before you render__.
+- It is encourage to use `std::move` to move variables into the components where they are needed, both for performance and to ensure they remain in scope.
+- Alternatively you can pass in variables by value, so that the document retains its own copy of the data it needs to render, which cannot fall out of scope.
+- Additional care must be taking when providing `std::string_view`s to the document. While performant, you must ensure the underlying string has not been destroyed.
+
+## 📖 User guide
+
+### 1. Components (a.k.a scope, reusability & composition)
+
+A component is any C++ struct/class that inherits from `Webxx::component`. It is made
+up of HTML, along with optional parameters & CSS styles. The CSS is "scoped": Any CSS styles defined in a component apply only to the HTML elements that belong to that component:
+
+```c++
+using namespace Webxx;
+
+// Components can work with whatever data model you want:
+struct TodoItemData {
+    std::string description;
+    bool isCompleted;
+};
+
+struct TodoItem : component<TodoItem> {
+    // Paramters are defined in the constructor:
+    TodoItem (TodoItemData &&todoItem) : component<TodoItem> {
+        // CSS (which can be omitted):
+        {
+            {"li.completed",
+                textDecoration{"line-through"},
+            },
+        },
+        // HTML:
+        li {
+            // Element attributes appear first...
+            {_class{todoItem.isCompleted ? "completed" : ""}},
+            // ...followed by content:
+            todoItem.description,
+        },
+    } {}
+};
+```
+
+It is encouraged to move variables into the components where they are needed, to avoid any risk of them falling out of scope:
+
+```c++
+TodoItem generateTodoItem () {
+    TodoItemData item{"Thing to do!", false};
+    // If we did not use std::move, description would fall
+    // out of scope and be destroyed before being rendered:
+    return TodoItem{std::move(item)};
+}
+
+auto todoItem = generateTodoItem();
+auto html = render(todoItem); // <li>Thing to do!</li>
+```
+
+It is straightforwards to repeat components using the `each` helper function, or optionally include them using `maybe`:
+
+```c++
+struct TodoList : component<TodoList> {
+    TodoList (std::list<TodoItemData> &&todoItems) : component<TodoList> {
+        ul {
+            // Show each item in the list:
+            each<TodoItem>(std::move(todoItems)),
+            // Show a message if the list is empty:
+            maybe(todoItems.empty(), [] () {
+                return li{"You're all done!"};
+            }),
+        },
+    } {}
+};
+```
+
+Components and other nodes can be composed arbitrarily. For example this allows you to create structural components with slots into which other components can be inserted:
+
+```c++
+struct TodoPage : component<TodoPage> {
+    TodoPage (node &&titleEl, node &&mainEl) : component<TodoPage> {
+        doc { // Creates the <doctype>
+            html{ // Creates the <html>
+                head {
+                    title{"Todo"},
+                    // Special element to collect all component CSS:
+                    styleTarget{},
+                },
+                body{
+                    std::move(titleEl),
+                    main {
+                        std::move(mainEl),
+                    }
+                },
+            },
+        },
+    } {}
+};
+
+auto pageHtml = render(TodoPage{
+    h1{"My todo list"},
+    TodoList{{
+        {"Clean the car", false},
+        {"Clean the dog", false},
+        {"Clean the browser history", true},
+    }},
+});
+```
+
+__The `styleTarget` element must appear somewhere in the HTML, in order for the CSS defined in each component to work.__
+
+### 2. Loops, Conditionals & Fragments
+
+The `each` function can be used to generate elements, and supports two approaches that can produce equivalent outputs:
+
+```c++
+std::vector<std::string> letters{"a", "b", "c"};
+
+// Using a lambda (or other callable) allows arbitrary complexity:
+fragment byLambda = each(letters, [] (std::string letter) {
+    return li { letter };
+});
+
+// Using the template approach is best for concise simplicity:
+fragment byTemplate = each<li>(letters);
+
+auto isSame = render(byLambda) == render(byTemplate); // is true
+```
+
+A `fragment` contains all the generated elements for each item. A `fragment` is an "invisible" element; it will not show up in the rendered output (but its children will).
+
+They can be used to pass around multiple elements without wrapping them in a containing `div` or similar. For example they let you produce multiple elements for each item in a loop:
+
+```c++
+auto html = render(each(letters, [] (std::string letter) {
+    return fragment {
+        p{letter},
+        hr{},
+    };
+}));
+// html = "<p>a</p><hr/><p>b</p><hr/><p>c</p><hr/>"
+```
+
+### 3. Placeholders (a.k.a how to i18n)
+
+Placeholders enable you to perform post-processing of the document at render time. This can be usful for tasks such as internationalisation.
+
+You can define a "populator" function, which is called for every placeholder that is encoutered while rendering the doucment.
+
+```c++
+std::unordered_map<std::string_view,std::string_view> translations {
+    {"Hello", "Hej"},
+    {"world", "värld"},
+};
+
+h1 title {_{"Hello"}, _{"world"}, "!"};
+
+auto translatedHtml = render(title, {
+    false,
+    [&translations] (
+        const std::string_view key,
+        const std::string_view
+    ) -> const std::string_view {
+        return translations.at(key);
+    }
+});
+
+// translatedHtml = "<h1>Hey värld!</h1>"
+```
 
 ## 🔥 Performance
 
@@ -193,21 +361,14 @@ Contributions are super welcome, in the form of pull requests from Github forks.
 
 ### Roadmap / To-do
 
-#### Now
-
-- Reference documentation.
-
-#### Sooner
-
-- Add Mac & Windows builds.
-- Avoid repeated hashing of component names when using hashed names.
-- More benchmarking/testing (memory, libmxl2, more usage variations).
-
-#### Later
-
-- WASM usage (with two-way DOM binding).
-- Indented render output.
-- Publishing to package managers.
+- Now
+    - Add Mac & Windows builds.
+    - Avoid repeated hashing of component names when using hashed names.
+    - More benchmarking/testing (memory, libmxl2, more usage variations).
+- Later
+    - WASM usage (with two-way DOM binding).
+    - Indented render output.
+    - Publishing to package managers.
 
 ### Approach
 

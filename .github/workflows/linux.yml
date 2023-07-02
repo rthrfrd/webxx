@@ -67,7 +67,7 @@ jobs:
       working-directory: ${{github.workspace}}/build
       if: ${{ matrix.coverage == 'ON' }}
       run: |
-        ln -s /usr/bin/llvm-cov-11 ${{github.workspace}}/build/gcov &&\
+        ln -s /usr/bin/llvm-cov-14 ${{github.workspace}}/build/gcov &&\
         lcov --capture --directory .\
              --gcov-tool ${{github.workspace}}/build/gcov\
              --output-file ./coverage.info\

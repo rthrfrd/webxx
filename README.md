@@ -17,7 +17,7 @@ std::string html = render(h1{"Hello ", i{"world!"}});
 - No external files or string interpolation: Your templates are compiled in.
 - Component system provides easy modularity, re-use and automatic CSS scoping.
 - Small, simple, single-file, header-only library.
-- Compatible with C++11 and above, minimally stdlib dependent.
+- Compatible with C++17 and above (to support `std::string_view`), minimally stdlib dependent.
 
 ## 🏃 Getting started
 

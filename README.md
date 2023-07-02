@@ -294,9 +294,9 @@ auto html = render(each(letters, [] (std::string letter) {
 
 ### 3. Placeholders (a.k.a how to i18n)
 
-Placeholders enable you to perform post-processing of the document at render time. This can be usful for tasks such as internationalisation.
+Placeholders enable you to perform post-processing of the document at render time. This can be useful for tasks such as internationalization.
 
-You can define a "populator" function, which is called for every placeholder that is encoutered while rendering the doucment.
+You can define a "populator" function, which is called for every placeholder that is encountered while rendering the document.
 
 ```c++
 std::unordered_map<std::string_view,std::string_view> translations {
@@ -381,8 +381,8 @@ Contributions are super welcome, in the form of pull requests from Github forks.
 The library is sectioned into several modules:
 
 - __CSS:__ Classes for constructing CSS stylesheets.
-- __HTML:__ Classes for construcing HTML elements & documents.
-- __Component:__ Abstration for a modular combination of CSS & HTML.
+- __HTML:__ Classes for constructing HTML elements & documents.
+- __Component:__ Abstraction for a modular combination of CSS & HTML.
 - __Rendering:__ Functions for rendering constructed Components, HTML & CSS into strings.
 - __Utility:__ Helper functions for dynamically generating content.
 - __Public:__ The interface users of this library can consume.

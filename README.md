@@ -338,6 +338,58 @@ render(customElTag{
 }); // <custom-el data-thing="value">Hi</custom-el>
 ```
 
+### 5. Rendering
+
+By default the `render` function appends everything to an internal string buffer, which it returns. However if you want to get that first byte out before rendering the whole doc, you can hook in with a function to stream the output while the rendering is still in progress:
+
+```c++
+#include <sstream>
+std::stringstream out;
+size_t chunkSize{256};
+
+// Our hook function takes rendered data, and a reference to the internal buffer:
+void onRenderData (const std::string_view data, std::string &buffer) {
+    // In this case we are going to still use the internal buffer...
+    buffer.append(data);
+    if (buffer.size() >= chunkSize) {
+        // ...and then stream it out every 256 characters:
+        out << buffer;
+        buffer.clear();
+    }
+}
+
+doc myDoc {
+    head {},
+    body {"Hello world"},
+};
+
+// Start the render:
+std::string leftovers = render(myDoc, {
+    nullptr, // We're not using a placeholder populator.
+    onRenderData, // Provide our render output receiver.
+    chunkSize // Preset the size of the internal buffer.
+});
+
+// Some data might be left in the buffer - this is returned so we can stream that too:
+out << leftovers;
+```
+
+You can also defer work until calling `render` by using `lazy`. However lazy blocks are still executed in a pass _before_ the first bytes are rendered.
+
+```c++
+dv myDiv{
+    // Evaluated now:
+    h1{"Hello"},
+    // Lazy block takes a function:
+    lazy{[] () {
+        // Only evaluated after render() is called below:
+        return p{"I'm lazy"};
+    }},
+};
+
+render(myDiv); // <h1>Hello</h1><p>I'm lazy</p>
+```
+
 ## 🔥 Performance
 
 Some basic [benchmarks](test/benchmark/benchmark.cpp) are built at `build/test/benchmark/webxx_benchmark` using [google-benchmark](https://github.com/google/benchmark.git). Webxx appears to be ~5-30x faster than using a template language like [inja](https://github.com/pantor/inja).

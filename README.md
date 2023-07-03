@@ -141,7 +141,7 @@ int main () {
 - Over 700 symbols are exposed in the `Webxx` namespace - use it considerately.
 - Symbols are lowercased to mimic their typical appearance in HTML & CSS.
 - HTML attributes are all prefixed with `_` (e.g. `href` -> `_href`).
-- All `hy-phen-ated` tags, properties and attributes are translated to `camelCase` (e.g. `line-height` -> `lineHeight`).
+- All `kebab-case` tags, properties and attributes are translated to `camelCase` (e.g. `line-height` -> `lineHeight`).
 - All CSS `@*` rules are renamed to `at*` (e.g. `@import` -> `atImport`).
 - The following terms are specially aliased to avoid C++ keyword clashes:
   - __HTML Elements:__

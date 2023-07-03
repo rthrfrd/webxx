@@ -51,9 +51,22 @@ TEST_SUITE("Attribute") {
         CHECK(std::string(attribute.name) == "class");
         CHECK(attribute.values[0].valueOwned == value);
 
-        SUBCASE("Const char attribute can be rendered") {
+        SUBCASE("std::string attribute can be rendered") {
             std::string rendered = render(attribute);
             CHECK(rendered == "class=\"big\"");
+        }
+    }
+
+    TEST_CASE("Attribute can be created with placeholder") {
+        const std::string_view value{"replacable"};
+        _class attribute{_{value}};
+
+        CHECK(std::string(attribute.name) == "class");
+        CHECK(attribute.values[0].valueOwned == value);
+
+        SUBCASE("Placeholder attribute can be rendered") {
+            std::string rendered = render(attribute);
+            CHECK(rendered == "class=\"replacable\"");
         }
     }
 
@@ -64,7 +77,7 @@ TEST_SUITE("Attribute") {
         CHECK(attribute.values[0].valueOwned == "big");
         CHECK(attribute.values[1].valueOwned == "tall");
 
-        SUBCASE("Const char attribute can be rendered") {
+        SUBCASE("Multiple values attribute can be rendered") {
             std::string rendered = render(attribute);
             CHECK(rendered == "class=\"big tall\"");
         }

@@ -377,17 +377,21 @@ out << leftovers;
 You can also defer work until calling `render` by using `lazy`. However lazy blocks are still executed in a pass _before_ the first bytes are rendered.
 
 ```c++
+std::string text{"Hello"};
+
 dv myDiv{
     // Evaluated now:
-    h1{"Hello"},
+    h1{std::string{text}},
     // Lazy block takes a function:
-    lazy{[] () {
+    lazy{[&text] () {
         // Only evaluated after render() is called below:
-        return p{"I'm lazy"};
+        return p{text};
     }},
 };
 
-render(myDiv); // <h1>Hello</h1><p>I'm lazy</p>
+text = "world";
+
+render(myDiv); // <div><h1>Hello</h1><p>world</p></div>
 ```
 
 ## 🔥 Performance

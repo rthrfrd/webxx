@@ -414,23 +414,33 @@ struct std::hash<Webxx::internal::CollectedCss> {
 
 
 namespace Webxx { namespace internal {
+    typedef std::function<void(const std::string_view, std::string &)> RenderReceiverFn;
     typedef std::unordered_set<CollectedCss> CollectedCsses;
     constexpr std::size_t renderBufferDefaultSize{16 * 1024};
 
-    struct RenderOptions {
-        PlaceholderPopulator placeholderPopulator;
-        std::size_t renderBufferSize;
+    inline void renderToInternalBuffer (const std::string_view data, std::string &buffer) {
+        buffer.append(data);
+    }
 
-        RenderOptions() :
-            placeholderPopulator{noopPopulator},
-            renderBufferSize(renderBufferDefaultSize)
+    struct RenderOptions {
+        mutable PlaceholderPopulator placeholderPopulator{noopPopulator};
+        mutable RenderReceiverFn renderReceiverFn{renderToInternalBuffer};
+        const std::size_t renderBufferSize{renderBufferDefaultSize};
+        mutable std::string renderBuffer{};
+
+        RenderOptions()
         {}
         RenderOptions(PlaceholderPopulator tPlaceholderPopulator) :
-            placeholderPopulator{tPlaceholderPopulator},
-            renderBufferSize(renderBufferDefaultSize)
+            placeholderPopulator{tPlaceholderPopulator}
         {}
-        RenderOptions(PlaceholderPopulator tPlaceholderPopulator, std::size_t tRenderBufferSize) :
+        RenderOptions(PlaceholderPopulator tPlaceholderPopulator, RenderReceiverFn tReceiverFn) :
             placeholderPopulator{tPlaceholderPopulator},
+            renderReceiverFn{tReceiverFn},
+            renderBufferSize(0)
+        {}
+        RenderOptions(PlaceholderPopulator tPlaceholderPopulator, RenderReceiverFn tReceiverFn, std::size_t tRenderBufferSize) :
+            placeholderPopulator{tPlaceholderPopulator},
+            renderReceiverFn(tReceiverFn),
             renderBufferSize(tRenderBufferSize)
         {}
     };
@@ -463,48 +473,55 @@ namespace Webxx { namespace internal {
 
     struct Renderer {
         const Collector &collector;
-        std::string out;
         const RenderOptions &options;
 
         Renderer(const Collector &tCollector, const RenderOptions &tOptions) :
             collector{tCollector}, options{tOptions}
         {
-            out.reserve(options.renderBufferSize);
+            options.renderBuffer.reserve(options.renderBufferSize);
         }
+
+        private:
+
+        void sendToRender (const std::string_view rendered) {
+            options.renderReceiverFn(rendered, options.renderBuffer);
+        }
+
+        public:
 
         const std::string componentName (ComponentType type) {
             return std::to_string(type);
         }
 
         void render (const HtmlAttribute &attribute, const ComponentType) {
-            out.append(attribute.name);
+            sendToRender(attribute.name);
             if (!attribute.values.empty()) {
-                out.append("=\"");
+                sendToRender("=\"");
                 bool shouldSeparate = false;
                 for(auto &value : attribute.values) {
                     if (shouldSeparate) {
-                        out.append(" ");
+                        sendToRender(" ");
                     }
 
                     switch (value.valueType) {
                         case ValueType::LITERAL:
-                            out.append(value.valueOwned);
-                            out.append(value.valueViewed);
+                            sendToRender(value.valueOwned);
+                            sendToRender(value.valueViewed);
                             break;
                         case ValueType::PLACEHOLDER:
-                            out.append(options.placeholderPopulator(value.valueOwned, attribute.name));
+                            sendToRender(options.placeholderPopulator(value.valueOwned, attribute.name));
                             break;
                     }
 
                     shouldSeparate = true;
                 }
-                out.append("\"");
+                sendToRender("\"");
             }
         }
 
         void render (const HtmlAttributes &attributes, const ComponentType currentComponent) {
             for (auto &attribute : attributes) {
-                out.append(" ");
+                sendToRender(" ");
                 render(attribute, currentComponent);
             }
         }
@@ -516,31 +533,31 @@ namespace Webxx { namespace internal {
             }
 
             if (strlen(node.options.prefix)) {
-                out.append(node.options.prefix);
+                sendToRender(node.options.prefix);
             }
 
             if (strlen(node.options.tagName)) {
-                out.append("<");
-                out.append(node.options.tagName);
+                sendToRender("<");
+                sendToRender(node.options.tagName);
                 if (!node.attributes.empty()) {
                     render(node.attributes, nextComponent);
                 }
                 if (node.options.selfClosing) {
-                    out.append("/");
+                    sendToRender("/");
                 }
                 if (nextComponent) {
-                    out.append(" ");
-                    out.append(componentScopePrefix);
-                    out.append(componentName(nextComponent));
+                    sendToRender(" ");
+                    sendToRender(componentScopePrefix);
+                    sendToRender(componentName(nextComponent));
                 }
-                out.append(">");
+                sendToRender(">");
             }
 
             if (node.options.collectionTarget == PLACEHOLDER) {
-                out.append(options.placeholderPopulator(node.contentOwned, node.options.tagName));
+                sendToRender(options.placeholderPopulator(node.contentOwned, node.options.tagName));
             } else {
-                out.append(node.contentOwned);
-                out.append(node.contentViewed);
+                sendToRender(node.contentOwned);
+                sendToRender(node.contentViewed);
             }
 
             if (!node.children.empty()) {
@@ -556,9 +573,9 @@ namespace Webxx { namespace internal {
             }
 
             if ((!node.options.selfClosing) && strlen(node.options.tagName)) {
-                out.append("</");
-                out.append(node.options.tagName);
-                out.append(">");
+                sendToRender("</");
+                sendToRender(node.options.tagName);
+                sendToRender(">");
             }
         }
 
@@ -572,16 +589,16 @@ namespace Webxx { namespace internal {
             bool shouldSeparate = false;
             for (auto &selector : selectors) {
                 if (shouldSeparate) {
-                    out.append(",");
+                    sendToRender(",");
                 }
 
-                out.append(selector);
+                sendToRender(selector);
 
                 if (currentComponent) {
-                    out.append("[");
-                    out.append(componentScopePrefix);
-                    out.append(componentName(currentComponent));
-                    out.append("]");
+                    sendToRender("[");
+                    sendToRender(componentScopePrefix);
+                    sendToRender(componentName(currentComponent));
+                    sendToRender("]");
                 }
                 shouldSeparate = true;
             }
@@ -590,33 +607,35 @@ namespace Webxx { namespace internal {
         void render (const CssRule &rule, const ComponentType currentComponent) {
             if (!rule.canNest) {
                 // Single line rule:
-                out.append(rule.label);
+                sendToRender(rule.label);
                 if (!rule.selectors.empty()) {
-                    out.append(" ");
+                    sendToRender(" ");
                     render(rule.selectors, 0);
                 }
                 if (!rule.value.empty()) {
-                    out.append(":").append(rule.value);
+                    sendToRender(":");
+                    sendToRender(rule.value);
                 }
-                out.append(";");
+                sendToRender(";");
             } else {
                 // Nested rule:
                 if(strlen(rule.label)) {
                     // @rule (has a label and selectors):
-                    out.append(rule.label).append(" ");
+                    sendToRender(rule.label);
+                    sendToRender(" ");
                     render(rule.selectors, 0);
                 } else {
                     // Style rule (has no label, only selectors):
                     render(rule.selectors, currentComponent);
                 }
 
-                out.append("{");
+                sendToRender("{");
 
                 for (auto &child : rule.children) {
                     render(child, currentComponent);
                 }
 
-                out.append("}");
+                sendToRender("}");
             }
         }
 
@@ -651,7 +670,7 @@ namespace Webxx { namespace internal {
             Collector collector = collect(thing, options);
             Renderer renderer(collector, options);
             renderer.render(std::forward<T>(thing), 0);
-            return renderer.out;
+            return options.renderBuffer;
         }
 
         template<typename T>
@@ -664,7 +683,7 @@ namespace Webxx { namespace internal {
             Collector collector = collect(thing, options);
             Renderer renderer(collector, options);
             renderer.render(collector.csses, 0);
-            return renderer.out;
+            return options.renderBuffer;
         }
 
         template<typename T>

@@ -154,7 +154,7 @@ int main () {
 ### Memory safety
 
 - As it is possible to render elements at a different time from constructing them, __you must make sure that the objects you reference in your document have not been destroyed before you render__.
-- It is encourage to use `std::move` to move variables into the components where they are needed, both for performance and to ensure they remain in scope.
+- It is encouraged to use `std::move` to move variables into the components where they are needed, both for performance and to ensure they remain in scope.
 - Alternatively you can pass in variables by value, so that the document retains its own copy of the data it needs to render, which cannot fall out of scope.
 - Additional care must be taking when providing `std::string_view`s to the document. While performant, you must ensure the underlying string has not been destroyed.
 
@@ -317,6 +317,25 @@ auto translatedHtml = render(title, {
 });
 
 // translatedHtml = "<h1>Hey värld!</h1>"
+```
+
+### 4. Custom elements & attributes
+
+You can define your own elements and attributes in the same way that webxx does internally:
+
+```c++
+constexpr static char customElTag[] = "custom-el";
+using customEl = Webxx::el<customElTag>;
+
+constexpr static char customDataThingAttr[] = "data-thing";
+using dataThing = Webxx::attr<customDataThingAttr>;
+
+render(customElTag{
+    {
+        dataThing{"value"},
+    },
+    "Hi",
+}); // <custom-el data-thing="value">Hi</custom-el>
 ```
 
 ## 🔥 Performance

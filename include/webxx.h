@@ -480,6 +480,9 @@ namespace Webxx { namespace internal {
             collector{tCollector}, options{tOptions}
         {
             options.renderBuffer.reserve(options.renderBufferSize);
+            if (!options.placeholderPopulator) {
+                options.placeholderPopulator = noopPopulator;
+            }
         }
 
         private:

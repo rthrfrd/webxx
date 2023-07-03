@@ -253,17 +253,20 @@ namespace Webxx { namespace internal {
     typedef std::vector<HtmlNode> HtmlNodes;
     typedef std::string_view ComponentName;
     typedef std::size_t ComponentType;
+    typedef std::function<HtmlNode()> ContentProducer;
 
     struct HtmlNode {
         const HtmlNodeOptions options{none, none, false, NONE};
         const HtmlAttributes attributes;
-        const HtmlNodes children;
+        mutable HtmlNodes children;
         const std::string contentOwned;
         const std::string_view contentViewed;
+        const ContentProducer contentLazy{};
         const CssRules css;
         const ComponentType componentType{0};
 
-        HtmlNode () {}
+        HtmlNode ()
+        {}
         HtmlNode (const Placeholder &&tPlaceholder) :
             options{none, none, false, PLACEHOLDER},
             contentOwned{std::move(tPlaceholder)}
@@ -276,6 +279,9 @@ namespace Webxx { namespace internal {
             contentOwned{tContent} {}
         HtmlNode (const std::string_view tContent) :
             contentViewed{tContent} {}
+        HtmlNode (const ContentProducer tContentProducer) :
+            contentLazy{tContentProducer}
+        {}
         HtmlNode (
             HtmlNodeOptions &&tOptions,
             HtmlAttributes &&tAttributes,
@@ -418,15 +424,15 @@ namespace Webxx { namespace internal {
         RenderOptions() :
             placeholderPopulator{noopPopulator},
             renderBufferSize(renderBufferDefaultSize)
-            {}
+        {}
         RenderOptions(PlaceholderPopulator tPlaceholderPopulator) :
             placeholderPopulator{tPlaceholderPopulator},
             renderBufferSize(renderBufferDefaultSize)
-            {}
+        {}
         RenderOptions(PlaceholderPopulator tPlaceholderPopulator, std::size_t tRenderBufferSize) :
             placeholderPopulator{tPlaceholderPopulator},
             renderBufferSize(tRenderBufferSize)
-            {}
+        {}
     };
 
     struct Collector {
@@ -439,6 +445,9 @@ namespace Webxx { namespace internal {
         void collect (const HtmlNode* node) {
             if (node->componentType && !node->css.empty()) {
                 csses.insert({node->componentType, node->css});
+            }
+            if (node->contentLazy) {
+                node->children.push_back(node->contentLazy());
             }
             this->collect(&node->children);
         }
@@ -453,9 +462,9 @@ namespace Webxx { namespace internal {
     };
 
     struct Renderer {
-        Collector collector;
+        const Collector &collector;
         std::string out;
-        RenderOptions options;
+        const RenderOptions &options;
 
         Renderer(const Collector &tCollector, const RenderOptions &tOptions) :
             collector{tCollector}, options{tOptions}
@@ -638,7 +647,7 @@ namespace Webxx { namespace internal {
         }
 
         template<typename T>
-        std::string render (T&& thing, RenderOptions &&options) {
+        std::string render (T&& thing, const RenderOptions &&options) {
             Collector collector = collect(thing, options);
             Renderer renderer(collector, options);
             renderer.render(std::forward<T>(thing), 0);
@@ -651,7 +660,7 @@ namespace Webxx { namespace internal {
         }
 
         template<typename T>
-        std::string renderCss (T&& thing, RenderOptions &&options) {
+        std::string renderCss (T&& thing, const RenderOptions &&options) {
             Collector collector = collect(thing, options);
             Renderer renderer(collector, options);
             renderer.render(collector.csses, 0);

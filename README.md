@@ -156,7 +156,7 @@ int main () {
 - As it is possible to render elements at a different time from constructing them, __you must make sure that the objects you reference in your document have not been destroyed before you render__.
 - It is encouraged to use `std::move` to move variables into the components where they are needed, both for performance and to ensure they remain in scope.
 - Alternatively you can pass in variables by value, so that the document retains its own copy of the data it needs to render, which cannot fall out of scope.
-- Additional care must be taking when providing `std::string_view`s to the document. While performant, you must ensure the underlying string has not been destroyed.
+- Additional care must be taken when providing `std::string_view`s to the document. While performant, you must ensure the underlying string has not been destroyed.
 
 ## 📖 User guide
 

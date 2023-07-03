@@ -13,7 +13,7 @@ if(NOT "${CMAKE_CXX_STANDARD}")
 endif()
 
 option(WEBXX_BENCHMARK "Enable benchmarking targets (requires WEBXX_TEST=ON)" ${MAIN_PROJECT})
-option(WEBXX_COVERAGE "Enable code coverage reporting (requires WEBXX_TEST=ON)" ${MAIN_PROJECT})
+option(WEBXX_COVERAGE "Enable code coverage reporting (requires WEBXX_TEST=ON)" Off)
 option(WEBXX_PEDANTIC "Enable extra checks" ${MAIN_PROJECT})
 option(WEBXX_TEST "Enable test targets" ${MAIN_PROJECT})
 

@@ -193,6 +193,26 @@ TEST_SUITE("Node") {
         }
     }
 
+    TEST_CASE("Node can have lazy string content") {
+        h1 node{lazy{[] () {
+            return "Hello world";
+        }}};
+
+        SUBCASE("Node with lazy string content can be rendered") {
+            CHECK(render(node) == "<h1>Hello world</h1>");
+        }
+    }
+
+    TEST_CASE("Node can have lazy child content") {
+        h1 node{lazy{[] () {
+            return a{"Hello world"};
+        }}};
+
+        SUBCASE("Node with lazy string content can be rendered") {
+            CHECK(render(node) == "<h1><a>Hello world</a></h1>");
+        }
+    }
+
     TEST_CASE("Node can have multiple text content") {
         h1 node{"Hello", " world"};
 

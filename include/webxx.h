@@ -271,6 +271,9 @@ namespace Webxx { namespace internal {
             options{none, none, false, PLACEHOLDER},
             contentOwned{std::move(tPlaceholder)}
         {}
+        HtmlNode (const ContentProducer &&tContentProducer) :
+            contentLazy{std::move(tContentProducer)}
+        {}
         HtmlNode (const std::string &&tContent) :
             contentOwned{std::move(tContent)} {}
         HtmlNode (const char *tContent) :
@@ -279,9 +282,6 @@ namespace Webxx { namespace internal {
             contentOwned{tContent} {}
         HtmlNode (const std::string_view tContent) :
             contentViewed{tContent} {}
-        HtmlNode (const ContentProducer tContentProducer) :
-            contentLazy{tContentProducer}
-        {}
         HtmlNode (
             HtmlNodeOptions &&tOptions,
             HtmlAttributes &&tAttributes,
@@ -341,6 +341,7 @@ namespace Webxx { namespace internal {
         using doc = HtmlNodeDefined<none, doctype>;
         using text = HtmlNodeDefined<>;
         using fragment = HtmlNodeDefined<>;
+        using lazy = ContentProducer;
         using style = HtmlStyleNode;
         using styleTarget = HtmlNodeDefined<styleTag, none, false, CSS>;
     }

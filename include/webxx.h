@@ -116,7 +116,8 @@ namespace Webxx { namespace internal {
     struct CssRule {
         const bool canNest;
         const char* label;
-        const std::string_view value;
+        const std::string valueOwned;
+        const std::string_view valueViewed;
         const CssSelectors selectors;
         const CssRules children;
 
@@ -127,9 +128,52 @@ namespace Webxx { namespace internal {
         ) :
             canNest{true},
             label{none},
-            value{none},
+            valueOwned{none},
+            valueViewed{none},
             selectors{std::move(tCssSelectors)},
             children{std::forward<T>(rules)...}
+        {}
+        CssRule (
+            bool tCanNest,
+            const char* tLabel,
+            const char* tValue,
+            CssSelectors &&tCssSelectors,
+            CssRules &&tChildren
+        ) :
+            canNest{tCanNest},
+            label{tLabel},
+            valueOwned{tValue},
+            valueViewed{none},
+            selectors{std::move(tCssSelectors)},
+            children{std::move(tChildren)}
+        {}
+        CssRule (
+            bool tCanNest,
+            const char* tLabel,
+            std::string &&tValue,
+            CssSelectors &&tCssSelectors,
+            CssRules &&tChildren
+        ) :
+            canNest{tCanNest},
+            label{tLabel},
+            valueOwned{std::move(tValue)},
+            valueViewed{none},
+            selectors{std::move(tCssSelectors)},
+            children{std::move(tChildren)}
+        {}
+        CssRule (
+            bool tCanNest,
+            const char* tLabel,
+            const std::string &tValue,
+            CssSelectors &&tCssSelectors,
+            CssRules &&tChildren
+        ) :
+            canNest{tCanNest},
+            label{tLabel},
+            valueOwned{tValue},
+            valueViewed{none},
+            selectors{std::move(tCssSelectors)},
+            children{std::move(tChildren)}
         {}
         CssRule (
             bool tCanNest,
@@ -140,7 +184,8 @@ namespace Webxx { namespace internal {
         ) :
             canNest{tCanNest},
             label{tLabel},
-            value{tValue},
+            valueOwned{none},
+            valueViewed{tValue},
             selectors{std::move(tCssSelectors)},
             children{std::move(tChildren)}
         {}
@@ -148,6 +193,12 @@ namespace Webxx { namespace internal {
 
     template<const char* NAME>
     struct CssProperty : CssRule {
+        CssProperty (std::string &&tValue) :
+            CssRule{false, NAME, std::move(tValue), {}, {}} {}
+        CssProperty (const char *tValue) :
+            CssRule{false, NAME, tValue, {}, {}} {}
+        CssProperty (const std::string &tValue) :
+            CssRule{false, NAME, tValue, {}, {}} {}
         CssProperty (const std::string_view tValue) :
             CssRule{false, NAME, tValue, {}, {}} {}
     };
@@ -426,7 +477,7 @@ namespace Webxx { namespace internal {
     struct RenderOptions {
         mutable PlaceholderPopulator placeholderPopulator{noopPopulator};
         mutable RenderReceiverFn renderReceiverFn{renderToInternalBuffer};
-        const std::size_t renderBufferSize{renderBufferDefaultSize};
+        mutable std::size_t renderBufferSize{renderBufferDefaultSize};
         mutable std::string renderBuffer{};
 
         RenderOptions()
@@ -616,9 +667,13 @@ namespace Webxx { namespace internal {
                     sendToRender(" ");
                     render(rule.selectors, 0);
                 }
-                if (!rule.value.empty()) {
+                if (!rule.valueOwned.empty()) {
                     sendToRender(":");
-                    sendToRender(rule.value);
+                    sendToRender(rule.valueOwned);
+                }
+                if (!rule.valueViewed.empty()) {
+                    sendToRender(":");
+                    sendToRender(rule.valueViewed);
                 }
                 sendToRender(";");
             } else {
@@ -801,6 +856,7 @@ namespace Webxx {
     WEBXX_CSS_PROP(appearance);
     WEBXX_CSS_PROP_ALIAS(aspect-ratio, aspectRatio);
     WEBXX_CSS_PROP(azimuth);
+    WEBXX_CSS_PROP_ALIAS(backdrop-filter, backdropFilter);
     WEBXX_CSS_PROP_ALIAS(backface-visibility, backfaceVisibility);
     WEBXX_CSS_PROP(background);
     WEBXX_CSS_PROP_ALIAS(background-attachment, backgroundAttachment);
@@ -1192,6 +1248,7 @@ namespace Webxx {
     WEBXX_CSS_PROP_ALIAS(speak-numeral, speakNumeral);
     WEBXX_CSS_PROP_ALIAS(speak-punctuation, speakPunctuation);
     WEBXX_CSS_PROP_ALIAS(speech-rate, speechRate);
+    WEBXX_CSS_PROP(src);
     WEBXX_CSS_PROP(stress);
     WEBXX_CSS_PROP_ALIAS(string-set, stringSet);
     WEBXX_CSS_PROP_ALIAS(tab-size, tabSize);

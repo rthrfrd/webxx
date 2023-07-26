@@ -1451,6 +1451,7 @@ namespace Webxx {
     WEBXX_HTML_ATTR(align);
     WEBXX_HTML_ATTR(allow);
     WEBXX_HTML_ATTR(alt);
+    WEBXX_HTML_ATTR(as);
     WEBXX_HTML_ATTR(async);
     WEBXX_HTML_ATTR(autocapitalize);
     WEBXX_HTML_ATTR(autocomplete);
@@ -1458,6 +1459,7 @@ namespace Webxx {
     WEBXX_HTML_ATTR(autofill);
     WEBXX_HTML_ATTR(autofocus);
     WEBXX_HTML_ATTR(autoplay);
+    WEBXX_HTML_ATTR(blocking);
     WEBXX_HTML_ATTR(buffered);
     WEBXX_HTML_ATTR(capture);
     WEBXX_HTML_ATTR(challenge);

@@ -290,13 +290,15 @@ namespace Webxx { namespace internal {
         SCRIPT = 2,
         PLACEHOLDER = 3,
         VARIABLE = 4,
+        HEAD = 5,
     };
 
     struct HtmlNodeOptions {
         TagName tagName;
         Prefix prefix;
         SelfClosing selfClosing;
-        CollectionTarget collectionTarget;
+        CollectionTarget collects;
+        CollectionTarget collection;
     };
 
     typedef std::vector<HtmlAttribute> HtmlAttributes;
@@ -307,7 +309,7 @@ namespace Webxx { namespace internal {
     typedef std::function<HtmlNode()> ContentProducer;
 
     struct HtmlNode {
-        const HtmlNodeOptions options{none, none, false, NONE};
+        const HtmlNodeOptions options{none, none, false, NONE, NONE};
         const HtmlAttributes attributes;
         mutable HtmlNodes children;
         const std::string contentOwned;
@@ -319,7 +321,7 @@ namespace Webxx { namespace internal {
         HtmlNode ()
         {}
         HtmlNode (const Placeholder &&tPlaceholder) :
-            options{none, none, false, PLACEHOLDER},
+            options{none, none, false, PLACEHOLDER, NONE},
             contentOwned{std::move(tPlaceholder)}
         {}
         HtmlNode (const ContentProducer &&tContentProducer) :
@@ -352,29 +354,44 @@ namespace Webxx { namespace internal {
         TagName TAG = none,
         Prefix PREFIX = none,
         SelfClosing SELF_CLOSING = false,
-        CollectionTarget COLLECTS = NONE
+        CollectionTarget COLLECTS = NONE,
+        CollectionTarget COLLECTION = NONE
     >
     struct HtmlNodeDefined : public HtmlNode {
         HtmlNodeDefined () :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, {}, {}, 0} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION}, {}, {}, {}, 0} {}
         HtmlNodeDefined (std::initializer_list<HtmlNode> &&tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, std::move(tChildren), {}, 0} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION}, {}, std::move(tChildren), {}, 0} {}
         HtmlNodeDefined (HtmlNodes &&tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, {}, std::move(tChildren), {}, 0} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION}, {}, std::move(tChildren), {}, 0} {}
         template<typename ...T>
         HtmlNodeDefined (HtmlAttributes &&tAttributes, T&& ...tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS}, std::move(tAttributes), {std::forward<T>(tChildren)...}, {}, 0} {}
+            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION}, std::move(tAttributes), {std::forward<T>(tChildren)...}, {}, 0} {}
     };
 
     struct HtmlStyleNode : HtmlNode {
         HtmlStyleNode () :
-            HtmlNode{{styleTag, none, false, NONE}, {}, {}, {}, 0} {}
+            HtmlNode{{styleTag, none, false, NONE, NONE}, {}, {}, {}, 0} {}
         HtmlStyleNode (std::initializer_list<CssRule> &&tCss) :
-            HtmlNode{{styleTag, none, false, NONE}, {}, {}, std::move(tCss), 0} {}
+            HtmlNode{{styleTag, none, false, NONE, NONE}, {}, {}, std::move(tCss), 0} {}
         template<typename ...T>
         HtmlStyleNode (HtmlAttributes &&tAttributes, T&& ...tCss) :
-            HtmlNode{{styleTag, none, false, NONE}, std::move(tAttributes), {}, {std::forward<T>(tCss)...}, 0} {}
+            HtmlNode{{styleTag, none, false, NONE, NONE, NONE}, std::move(tAttributes), {}, {std::forward<T>(tCss)...}, 0} {}
     };
+
+    struct HtmlStyleCollectionNode : HtmlNode {
+        HtmlStyleCollectionNode () :
+            HtmlNode{{none, none, false, NONE, CSS}, {}, {}, {}, 0} {}
+        HtmlStyleCollectionNode (std::initializer_list<CssRule> &&tCss) :
+            HtmlNode{{none, none, false, NONE, CSS}, {}, {}, std::move(tCss), 0} {}
+        HtmlStyleCollectionNode (CssRules &&tCss) :
+            HtmlNode{{none, none, false, NONE, CSS}, {}, {}, std::move(tCss), 0} {}
+        template<typename ...T>
+        HtmlStyleCollectionNode (HtmlAttributes &&tAttributes, T&& ...tCss) :
+            HtmlNode{{none, none, false, NONE, CSS}, std::move(tAttributes), {}, {std::forward<T>(tCss)...}, 0} {}
+    };
+
+    typedef HtmlNodeDefined<none, none, false, NONE, HEAD> HtmlHeadCollectionNode;
 
     namespace exports {
         // HTML extensibility:
@@ -394,7 +411,10 @@ namespace Webxx { namespace internal {
         using fragment = HtmlNodeDefined<>;
         using lazy = ContentProducer;
         using style = HtmlStyleNode;
-        using styleTarget = HtmlNodeDefined<styleTag, none, false, CSS>;
+        using styleTarget = HtmlNodeDefined<styleTag, none, false, CSS, NONE>;
+        using styleSrc = HtmlStyleCollectionNode;
+        using headTarget = HtmlNodeDefined<none, none, false, HEAD, NONE>;
+        using headSrc = HtmlHeadCollectionNode;
     }
 }}
 
@@ -407,12 +427,21 @@ namespace Webxx { namespace internal {
 namespace Webxx { namespace internal {
 
     struct ComponentBase : public HtmlNode {
-        ComponentBase (const ComponentType tType, CssRules &&tCss, HtmlNode&& tRootNode) :
+        ComponentBase (
+            const ComponentType tType,
+            HtmlStyleCollectionNode &&tCss,
+            HtmlNode &&tRoot,
+            HtmlHeadCollectionNode &&tHead
+        ) :
             HtmlNode(
-                {none, none, false, NONE},
+                {none, none, false, NONE, NONE},
                 {},
-                {tRootNode},
-                std::move(tCss),
+                {
+                    std::move(tRoot),
+                    std::move(tCss),
+                    std::move(tHead),
+                },
+                {},
                 tType
             )
         {}
@@ -423,12 +452,20 @@ namespace Webxx { namespace internal {
         Component (HtmlNode&& tRootNode) : ComponentBase(
             typeid(T).hash_code(),
             {},
-            std::move(tRootNode)
+            std::move(tRootNode),
+            {}
         ) {}
-        Component (CssRules &&tCss, HtmlNode&& tRootNode) : ComponentBase(
+        Component (HtmlStyleCollectionNode &&tCss, HtmlNode&& tRootNode) : ComponentBase(
             typeid(T).hash_code(),
             std::move(tCss),
-            std::move(tRootNode)
+            std::move(tRootNode),
+            {}
+        ) {}
+        Component (HtmlStyleCollectionNode &&tCss, HtmlNode&& tRootNode, HtmlHeadCollectionNode&& tHeadNode) : ComponentBase(
+            typeid(T).hash_code(),
+            std::move(tCss),
+            std::move(tRootNode),
+            std::move(tHeadNode)
         ) {}
     };
 
@@ -448,10 +485,19 @@ namespace Webxx { namespace internal {
     constexpr char componentScopePrefix[] = "data-c";
 
     struct CollectedCss {
-        const ComponentType &componentType;
+        const ComponentType componentType;
         const CssRules &css;
 
         bool operator == (const CollectedCss &other) const noexcept {
+            return (other.componentType == componentType);
+        }
+    };
+
+    struct CollectedHtml {
+        const ComponentType componentType;
+        const HtmlNodes &nodes;
+
+        bool operator == (const CollectedHtml &other) const noexcept {
             return (other.componentType == componentType);
         }
     };
@@ -464,10 +510,16 @@ struct std::hash<Webxx::internal::CollectedCss> {
     }
 };
 
+template<>
+struct std::hash<Webxx::internal::CollectedHtml> {
+    std::size_t operator() (const Webxx::internal::CollectedHtml &collectedHtml) const noexcept {
+        return std::hash<std::size_t>{}(collectedHtml.componentType);
+    }
+};
+
 
 namespace Webxx { namespace internal {
     typedef std::function<void(const std::string_view, std::string &)> RenderReceiverFn;
-    typedef std::unordered_set<CollectedCss> CollectedCsses;
     constexpr std::size_t renderBufferDefaultSize{16 * 1024};
 
     inline void renderToInternalBuffer (const std::string_view data, std::string &buffer) {
@@ -497,30 +549,45 @@ namespace Webxx { namespace internal {
         {}
     };
 
+    typedef std::unordered_set<CollectedCss> CollectedCsses;
+    typedef std::unordered_set<CollectedHtml> CollectedHtmls;
+
     struct Collector {
         CollectedCsses csses;
+        CollectedHtmls heads;
         RenderOptions options;
 
         Collector(const RenderOptions &tOptions) :
-            csses{}, options{tOptions} {};
+            csses{}, heads{}, options{tOptions} {};
 
-        void collect (const HtmlNode* node) {
-            if (node->componentType && !node->css.empty()) {
-                csses.insert({node->componentType, node->css});
+        void collect (const HtmlNode* node, const ComponentType currentComponent) {
+            ComponentType nextComponent = currentComponent;
+            if (node->componentType) {
+                nextComponent = node->componentType;
             }
+
+            if (node->options.collection == HEAD && !node->children.empty()) {
+                heads.insert({nextComponent, node->children});
+            }
+
+            if (node->options.collection == CSS && !node->css.empty()) {
+                csses.insert({nextComponent, node->css});
+            }
+
             if (node->contentLazy) {
                 node->children.push_back(node->contentLazy());
             }
-            this->collect(&node->children);
+
+            this->collect(&(node->children), nextComponent);
         }
 
-        void collect (const HtmlNodes* tNodes) {
+        void collect (const HtmlNodes* tNodes, const ComponentType currentComponent) {
             for (auto &node : *tNodes) {
-                this->collect(&node);
+                this->collect(&node, currentComponent);
             }
         }
 
-        void collect (const void*) {}
+        void collect (const void*, const ComponentType) {}
     };
 
     struct Renderer {
@@ -587,6 +654,11 @@ namespace Webxx { namespace internal {
                 nextComponent = node.componentType;
             }
 
+            if (node.options.collection != NONE) {
+                // Nodes belonging to a collection will be rendered where they are collected:
+                return;
+            }
+
             if (strlen(node.options.prefix)) {
                 sendToRender(node.options.prefix);
             }
@@ -608,7 +680,7 @@ namespace Webxx { namespace internal {
                 sendToRender(">");
             }
 
-            if (node.options.collectionTarget == PLACEHOLDER) {
+            if (node.options.collects == PLACEHOLDER) {
                 sendToRender(options.placeholderPopulator(node.contentOwned, node.options.tagName));
             } else {
                 sendToRender(node.contentOwned);
@@ -619,12 +691,16 @@ namespace Webxx { namespace internal {
                 render(node.children, nextComponent);
             }
 
-            if ((!node.componentType) && (!node.css.empty())) {
+            if (!node.css.empty()) {
                 render(node.css, 0);
             }
 
-            if (node.options.collectionTarget == CSS) {
+            if (node.options.collects == CSS) {
                 render(collector.csses, nextComponent);
+            }
+
+            if (node.options.collects == HEAD) {
+                render(collector.heads, nextComponent);
             }
 
             if ((!node.options.selfClosing) && strlen(node.options.tagName)) {
@@ -704,9 +780,15 @@ namespace Webxx { namespace internal {
             }
         }
 
-        void render (const CollectedCsses &csses, const ComponentType) {
-            for (auto &css : csses) {
-                render(css.css, css.componentType);
+        void render (const CollectedCsses &collectedCsses, const ComponentType) {
+            for (auto &collectedCss : collectedCsses) {
+                render(collectedCss.css, collectedCss.componentType);
+            }
+        }
+
+        void render (const CollectedHtmls &collectedHtmls, const ComponentType) {
+            for (auto &collectedHtml : collectedHtmls) {
+                render(collectedHtml.nodes, collectedHtml.componentType);
             }
         }
     };
@@ -715,7 +797,7 @@ namespace Webxx { namespace internal {
         template<typename V>
         Collector collect (V&& tNode, const RenderOptions &options) {
             Collector collector(options);
-            collector.collect(&tNode);
+            collector.collect(&tNode, 0);
             return collector;
         }
 

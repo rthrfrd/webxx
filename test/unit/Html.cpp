@@ -122,7 +122,7 @@ TEST_SUITE("Attributes") {
             _dataCustom{"hello"}
         };
 
-        attrs attributes{std::move(attributesL)};
+        attrs attributes(std::move(attributesL));
 
         CHECK(attributes.size() == 4);
 

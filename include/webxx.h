@@ -131,7 +131,7 @@ namespace Webxx { namespace internal {
             LazyProducer producer;
             Type type;
 
-            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data);
+            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data)
 
             Data (
                 const std::string& tOwn = none,
@@ -208,7 +208,7 @@ namespace Webxx { namespace internal {
             std::vector<Text> selectors;
             std::vector<CssRule> children;
 
-            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data);
+            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data)
 
             Data (
                 bool tCanNest = false,
@@ -397,7 +397,7 @@ namespace Webxx { namespace internal {
             HtmlAttributeName name;
             std::vector<Text> values;
 
-            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data);
+            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data)
 
             Data (
                 HtmlAttributeName tName = none,
@@ -510,7 +510,7 @@ namespace Webxx { namespace internal {
             std::vector<CssRule> css{};
             ComponentTypeId componentTypeId{0};
 
-            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data);
+            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data)
 
             Data (
                 HtmlNodeOptions&& tOptions = {none, none, false, NONE, NONE},

@@ -732,7 +732,7 @@ namespace Webxx { namespace internal {
     constexpr size_t ctHash () {
         size_t hash{0};
         for (const char& c : WEBXX_FN_SIG) {
-            (hash ^= (size_t) c) <<= 1;
+            (hash ^= static_cast<size_t>(c)) <<= 1;
         }
         return hash;
     }

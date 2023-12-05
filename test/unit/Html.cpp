@@ -1,5 +1,6 @@
 #include "doctest/doctest.h"
 #include "webxx.h"
+#include <initializer_list>
 
 TEST_SUITE("Attribute") {
     using namespace Webxx;
@@ -10,8 +11,8 @@ TEST_SUITE("Attribute") {
     TEST_CASE("Attribute can be created empty") {
         _class attribute{};
 
-        CHECK(std::string(attribute.name) == "class");
-        CHECK(attribute.values.empty());
+        CHECK(std::string(attribute.data.name) == "class");
+        CHECK(attribute.data.values.empty());
 
         SUBCASE("Empty attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -22,8 +23,8 @@ TEST_SUITE("Attribute") {
     TEST_CASE("Attribute can be created with string literal") {
         _class attribute{"big"};
 
-        CHECK(std::string(attribute.name) == "class");
-        CHECK(attribute.values[0].valueOwned == "big");
+        CHECK(std::string(attribute.data.name) == "class");
+        CHECK(attribute.data.values[0].getView() == "big");
 
         SUBCASE("String literal attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -35,8 +36,8 @@ TEST_SUITE("Attribute") {
         const char value[] = "big";
         _class attribute{value};
 
-        CHECK(std::string(attribute.name) == "class");
-        CHECK(attribute.values[0].valueOwned == value);
+        CHECK(std::string(attribute.data.name) == "class");
+        CHECK(attribute.data.values[0].getView() == value);
 
         SUBCASE("Const char attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -48,8 +49,8 @@ TEST_SUITE("Attribute") {
         std::string value{"big"};
         _class attribute{value};
 
-        CHECK(std::string(attribute.name) == "class");
-        CHECK(attribute.values[0].valueOwned == value);
+        CHECK(std::string(attribute.data.name) == "class");
+        CHECK(attribute.data.values[0].getView() == value);
 
         SUBCASE("std::string attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -61,8 +62,8 @@ TEST_SUITE("Attribute") {
         const std::string_view value{"replacable"};
         _class attribute{_{value}};
 
-        CHECK(std::string(attribute.name) == "class");
-        CHECK(attribute.values[0].valueOwned == value);
+        CHECK(std::string(attribute.data.name) == "class");
+        CHECK(attribute.data.values[0].getView() == value);
 
         SUBCASE("Placeholder attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -73,9 +74,9 @@ TEST_SUITE("Attribute") {
     TEST_CASE("Attribute can be created with multiple values") {
         _class attribute{"big", "tall"};
 
-        CHECK(std::string(attribute.name) == "class");
-        CHECK(attribute.values[0].valueOwned == "big");
-        CHECK(attribute.values[1].valueOwned == "tall");
+        CHECK(std::string(attribute.data.name) == "class");
+        CHECK(attribute.data.values[0].getView() == "big");
+        CHECK(attribute.data.values[1].getView() == "tall");
 
         SUBCASE("Multiple values attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -86,8 +87,8 @@ TEST_SUITE("Attribute") {
     TEST_CASE("Custom attribute can be defined") {
         _dataCustom customAttribute{"something"};
 
-        CHECK(std::string(customAttribute.name) == "data-custom");
-        CHECK(customAttribute.values[0].valueOwned == "something");
+        CHECK(std::string(customAttribute.data.name) == "data-custom");
+        CHECK(customAttribute.data.values[0].getView() == "something");
 
         SUBCASE("Custom attribute can be rendered") {
             std::string rendered = render(customAttribute);
@@ -113,13 +114,15 @@ TEST_SUITE("Attributes") {
         }
     }
 
-    TEST_CASE("Attributes can be populated via initializer") {
-        attrs attributes{
+    TEST_CASE("Attributes can be populated via initializer list") {
+        std::initializer_list<internal::HtmlAttribute> attributesL{
             _class{"big small"},
             _id{"thing"},
             _disabled{},
             _dataCustom{"hello"}
         };
+
+        attrs attributes{std::move(attributesL)};
 
         CHECK(attributes.size() == 4);
 
@@ -127,28 +130,15 @@ TEST_SUITE("Attributes") {
             std::string rendered = render(attributes);
             CHECK(rendered == " class=\"big small\" id=\"thing\" disabled data-custom=\"hello\"");
         }
-    }
 
-    TEST_CASE("Attributes can be populated via vector") {
-        std::vector<internal::HtmlAttribute> attributesV{
-            _class{"big small"},
-            _id{"thing"},
-            _disabled{},
-            _dataCustom{"hello"},
-        };
-
-        attrs attributes{attributesV};
-
-        CHECK(attributes.size() == 4);
-
-        SUBCASE("Dynamically populated attributes can be rendered") {
-            std::string rendered = render(attributes);
-            CHECK(rendered == " class=\"big small\" id=\"thing\" disabled data-custom=\"hello\"");
+        SUBCASE("Initializer populated attributes can be rendered inside element") {
+            std::string rendered = render(p{std::move(attributes)});
+            CHECK(rendered == "<p class=\"big small\" id=\"thing\" disabled data-custom=\"hello\"></p>");
         }
     }
 
     TEST_CASE("Attributes can be dynamically populated") {
-        attrs attributes{};
+        std::vector<internal::HtmlAttribute> attributes{};
 
         attributes.push_back(_class{"big small"});
         attributes.push_back(_id{"thing"});
@@ -161,6 +151,11 @@ TEST_SUITE("Attributes") {
             std::string rendered = render(attributes);
             CHECK(rendered == " class=\"big small\" id=\"thing\" disabled data-custom=\"hello\"");
         }
+
+        SUBCASE("Dynamically populated attributes can be rendered inside element") {
+            std::string rendered = render(p{std::move(attributes)});
+            CHECK(rendered == "<p class=\"big small\" id=\"thing\" disabled data-custom=\"hello\"></p>");
+        }
     }
 }
 
@@ -170,7 +165,7 @@ TEST_SUITE("Node") {
     TEST_CASE("Node can be empty") {
         h1 node;
 
-        CHECK(std::string(node.options.tagName) == "h1");
+        CHECK(std::string(node.data.options.tagName) == "h1");
 
         SUBCASE("Empty node can be rendered") {
             CHECK(render(node) == "<h1></h1>");
@@ -262,7 +257,7 @@ TEST_SUITE("Node") {
 
         html html {
             head {
-                title,
+                std::move(title),
             },
             body {
                 h1{{_class{"title"}},
@@ -280,8 +275,8 @@ TEST_SUITE("Node") {
     TEST_CASE("Node can be self-closing") {
         img node;
 
-        CHECK(std::string(node.options.tagName) == "img");
-        CHECK(node.options.selfClosing == true);
+        CHECK(std::string(node.data.options.tagName) == "img");
+        CHECK(node.data.options.selfClosing == true);
 
         SUBCASE("Self-closing node can be rendered") {
             CHECK(render(node) == "<img/>");
@@ -299,8 +294,8 @@ TEST_SUITE("Node") {
     TEST_CASE("Node can have prefix") {
         doc node;
 
-        CHECK(std::string(node.options.tagName) == "");
-        CHECK(std::string(node.options.prefix) == "<!doctype html>");
+        CHECK(std::string(node.data.options.tagName) == "");
+        CHECK(std::string(node.data.options.prefix) == "<!doctype html>");
 
         SUBCASE("Prefixed node can be rendered") {
             CHECK(render(node) == "<!doctype html>");

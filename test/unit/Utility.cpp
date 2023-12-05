@@ -1,4 +1,5 @@
 #include "doctest/doctest.h"
+#include "fmt/core.h"
 #include "webxx.h"
 
 TEST_SUITE("Utility") {
@@ -15,6 +16,13 @@ TEST_SUITE("Utility") {
     li postItem (const Post &post) {
         return {post.title};
     }
+
+    struct PostEl : component<PostEl> {
+        PostEl (Post&& post) : component<PostEl> {
+            {},
+            li { std::move(post.title) },
+        } {}
+    };
 
     TEST_CASE("Maybe include HTML") {
         const std::string_view will{"You will see me."};
@@ -49,12 +57,14 @@ TEST_SUITE("Utility") {
             }
         };
 
-        MaybeAThing notAThing {};
         MaybeAThing isAThing {"Inflatible trousers"};
+        MaybeAThing notAThing {};
 
         SUBCASE("Maybe on a bool operator without forwarding") {
             dv myDiv{
-                maybe(isAThing, [&isAThing] () {return p{isAThing.thingIAm}; }),
+                maybe(isAThing, [&isAThing] () {
+                    return p{isAThing.thingIAm};
+                }),
                 maybe(notAThing, [] () { return p{"Not a thing."}; }),
             };
 
@@ -104,6 +114,21 @@ TEST_SUITE("Utility") {
                 "<li>Is C++ dead? 💀</li>"
             "</ol>"
         );
+    }
+
+    TEST_CASE("Each with component") {
+        ol myList {
+            each<PostEl>(posts),
+        };
+
+        CHECK(render(myList) == fmt::format(
+            "<ol>"
+                "<li data-c{0}>10 ways to leak memory</li>"
+                "<li data-c{0}>1 simple trick</li>"
+                "<li data-c{0}>Is C++ dead? 💀</li>"
+            "</ol>",
+            (PostEl({})).data.componentTypeId
+        ));
     }
 
     TEST_CASE("Using placholder") {

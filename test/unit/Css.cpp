@@ -10,8 +10,8 @@ TEST_SUITE("CSS Stylesheet") {
     TEST_CASE("Property can have value") {
         color property{"red"};
 
-        CHECK(std::string(property.label) == "color");
-        CHECK(property.valueOwned == "red");
+        CHECK(std::string(property.data.label) == "color");
+        CHECK(property.data.value.getView() == "red");
 
         SUBCASE("Property with value can be rendered") {
             CHECK(render(property) == "color:red;");
@@ -21,8 +21,8 @@ TEST_SUITE("CSS Stylesheet") {
     TEST_CASE("Custom property can be defined") {
         webkitSomething property{"foo"};
 
-        CHECK(property.label == webkitSomethingName);
-        CHECK(property.valueOwned == "foo");
+        CHECK(property.data.label == webkitSomethingName);
+        CHECK(property.data.value.getView() == "foo");
 
         SUBCASE("Customer property can be rendered") {
             CHECK(render(property) == "-webkit-something:foo;");
@@ -50,7 +50,7 @@ TEST_SUITE("CSS Stylesheet") {
             color{"red"},
         };
 
-        CHECK(rule.children.size() == 1);
+        CHECK(rule.data.children.size() == 1);
 
         SUBCASE("Rule with single property can be rendered") {
             CHECK(render(rule) == ".selector{color:red;}");
@@ -62,7 +62,7 @@ TEST_SUITE("CSS Stylesheet") {
             color{"red"},
         };
 
-        CHECK(rule.children.size() == 1);
+        CHECK(rule.data.children.size() == 1);
 
         SUBCASE("Rule with single property and multiple selectors can be rendered") {
             CHECK(render(rule) == ".a,.b{color:red;}");
@@ -76,7 +76,7 @@ TEST_SUITE("CSS Stylesheet") {
             font{"128px \"Comic Sans\""}
         };
 
-        CHECK(rule.children.size() == 3);
+        CHECK(rule.data.children.size() == 3);
 
         SUBCASE("Rule with multiple properties can be rendered") {
             CHECK(render(rule) == ".selector{color:red;background-color:#000;font:128px \"Comic Sans\";}");
@@ -90,7 +90,7 @@ TEST_SUITE("CSS Stylesheet") {
             font{"128px \"Comic Sans\""}
         };
 
-        CHECK(rule.children.size() == 3);
+        CHECK(rule.data.children.size() == 3);
 
         SUBCASE("Rule with multiple properties can be rendered") {
             CHECK(render(rule) == ".a,.b{color:red;background-color:#000;font:128px \"Comic Sans\";}");

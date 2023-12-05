@@ -62,9 +62,19 @@
 #define WEBXX_HTML_ATTR_ALIAS(NAME,ALIAS)\
     namespace internal { namespace res { constexpr char ALIAS ## A[] = #NAME; }}\
     using _ ## ALIAS = internal::HtmlAttributeDefined<internal::res::ALIAS ## A>
+#define WEBXX_MOVE_ONLY_CONSTRUCTORS(CLASS)\
+    CLASS (CLASS &&) = default;\
+    CLASS & operator= (CLASS &&) = default;\
+    CLASS (const CLASS &) = delete;\
+    CLASS & operator= (const CLASS &) = delete;
+#ifdef _MSC_VER
+#define WEBXX_FN_SIG __FUNCSIG__
+#else
+#define WEBXX_FN_SIG __PRETTY_FUNCTION__
+#endif
 
 namespace Webxx { namespace internal {
-    constexpr char none[] = "";
+    static constexpr const char none[] = "";
 }}
 
 
@@ -80,9 +90,15 @@ namespace Webxx { namespace internal {
         using std::string::string;
     };
 
-    using PlaceholderPopulator = std::function<const std::string_view(const std::string_view, const std::string_view)>;
+    using PlaceholderPopulator = std::function<const std::string_view(
+        const std::string_view,
+        const std::string_view
+    )>;
 
-    inline const std::string_view noopPopulator (const std::string_view value, const std::string_view) {
+    inline const std::string_view noopPopulator (
+        const std::string_view value,
+        const std::string_view
+    ) {
         return value;
     }
 
@@ -93,138 +109,273 @@ namespace Webxx { namespace internal {
 }}
 
 
+////|      |////
+////| Text |////
+////|      |////
+
+
+namespace Webxx { namespace internal {
+
+    struct Text {
+        using LazyProducer = std::function<std::string()>;
+
+        enum class Type {
+            LITERAL = 0,
+            PLACEHOLDER = 1,
+            LAZY = 2,
+        };
+
+        struct Data {
+            std::string own;
+            std::string_view view;
+            LazyProducer producer;
+            Type type;
+
+            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data);
+
+            Data (
+                const std::string& tOwn = none,
+                std::string_view tView = none,
+                LazyProducer&& tProducer = nullptr,
+                Type tType = Type::LITERAL
+            ) :
+                own{tOwn},
+                view{tView},
+                producer{std::move(tProducer)},
+                type{tType}
+            {}
+        };
+
+        mutable Data data;
+
+        Text (Text&&) = default;            // move construct
+        Text& operator= (Text&&) = default; // move assign
+        Text (const Text& other) : data{    // copy construct
+            std::move(other.data)
+        } {}
+        Text& operator= (Text& other) {     // copy assign
+            this->data = std::move(other.data);
+            return *this;
+        }
+
+        Text () : data {
+        } {}
+        Text (std::string&& value) : data {
+            std::move(value) // own
+        } {}
+        Text (const char* const value) : data {
+            {},
+            value, // view
+        } {}
+        Text (const std::string& value) : data {
+            value // own
+        } {}
+        Text (const std::string_view value) : data {
+            {},
+            std::move(value) // view
+        } {}
+        Text (Placeholder&& tPlaceholder) : data {
+            std::move(tPlaceholder), // own
+            {},
+            {},
+            Text::Type::PLACEHOLDER
+        } {}
+        Text (LazyProducer&& tLazyProducer) : data {
+            {},
+            {},
+            std::move(tLazyProducer), // producer
+            Text::Type::LAZY
+        } {}
+
+        inline std::string_view getView () const {
+            return this->data.view.empty() ? std::string_view(this->data.own) : this->data.view;
+        }
+    };
+}}
+
+
 ////|       |////
 ////|  CSS  |////
 ////|       |////
 
 
 namespace Webxx { namespace internal {
-    typedef std::string_view CssSelector;
-    struct CssSelectors : std::vector<CssSelector> {
-        CssSelectors(CssSelector selector) :
-            std::vector<CssSelector>{selector} {}
-        CssSelectors(const std::string &selector) :
-            std::vector<CssSelector>{selector} {}
-        CssSelectors(const char* selector) :
-            std::vector<CssSelector>{selector} {}
-        CssSelectors(std::initializer_list<CssSelector> &&selectors) :
-            std::vector<CssSelector>{std::move(selectors)} {}
-    };
-
-    struct CssRule;
-    typedef std::vector<CssRule> CssRules;
     struct CssRule {
-        const bool canNest;
-        const char* label;
-        const std::string valueOwned;
-        const std::string_view valueViewed;
-        const CssSelectors selectors;
-        const CssRules children;
+        struct Data {
+            bool canNest;
+            const char* label;
+            Text value;
+            std::vector<Text> selectors;
+            std::vector<CssRule> children;
 
-        template<typename ...T>
+            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data);
+
+            Data (
+                bool tCanNest = false,
+                const char* tLabel = none,
+                Text&& tValue = none,
+                std::vector<Text>&& tSelectors = {},
+                std::vector<CssRule>&& tChildren = {}
+            ) :
+                canNest{tCanNest},
+                label{tLabel},
+                value{std::move(tValue)},
+                selectors{std::move(tSelectors)},
+                children{std::move(tChildren)}
+            {}
+        };
+
+        mutable Data data;
+
+        CssRule (CssRule&&) = default;            // move construct
+        CssRule& operator= (CssRule&&) = default; // move assign
+        CssRule (const CssRule& other) : data {   // copy construct
+            std::move(other.data)
+        } {}
+        CssRule& operator= (CssRule& other) {     // copy assign
+            this->data = std::move(other.data);
+            return *this;
+        }
+
+        CssRule (Text&& tSelector) : data {
+            true,
+            none,
+            {},
+            {std::move(tSelector)},
+            {},
+        } {}
+        CssRule (std::initializer_list<Text>&& tSelectors) : data {
+            true,
+            none,
+            {},
+            std::move(tSelectors),
+            {},
+        } {}
+        CssRule (Text&& tSelector, std::initializer_list<CssRule>&& tRules) : data {
+            true,
+            none,
+            {},
+            {std::move(tSelector)},
+            std::move(tRules),
+        } {}
+        CssRule (std::initializer_list<Text>&& tSelectors, std::initializer_list<CssRule>&& tRules) : data {
+            true,
+            none,
+            {},
+            std::move(tSelectors),
+            std::move(tRules),
+        } {}
+        template <class... T, class = CssRule>
+        CssRule (Text&& tSelector, T&& ...tRules) : data {
+            true,
+            none,
+            {},
+            {std::move(tSelector)},
+            {std::forward<T>(tRules)...},
+        } {}
+        template <class... T, class = CssRule>
+        CssRule (std::initializer_list<Text>&& tSelectors, T&& ...tRules) : data {
+            true,
+            none,
+            {},
+            std::move(tSelectors),
+            {std::forward<T>(tRules)...},
+        } {}
+
         CssRule (
-            CssSelectors &&tCssSelectors,
-            T&& ...rules
-        ) :
-            canNest{true},
-            label{none},
-            valueOwned{none},
-            valueViewed{none},
-            selectors{std::move(tCssSelectors)},
-            children{std::forward<T>(rules)...}
-        {}
-        CssRule (
-            bool tCanNest,
-            const char* tLabel,
-            const char* tValue,
-            CssSelectors &&tCssSelectors,
-            CssRules &&tChildren
-        ) :
-            canNest{tCanNest},
-            label{tLabel},
-            valueOwned{tValue},
-            valueViewed{none},
-            selectors{std::move(tCssSelectors)},
-            children{std::move(tChildren)}
-        {}
-        CssRule (
-            bool tCanNest,
-            const char* tLabel,
-            std::string &&tValue,
-            CssSelectors &&tCssSelectors,
-            CssRules &&tChildren
-        ) :
-            canNest{tCanNest},
-            label{tLabel},
-            valueOwned{std::move(tValue)},
-            valueViewed{none},
-            selectors{std::move(tCssSelectors)},
-            children{std::move(tChildren)}
-        {}
-        CssRule (
-            bool tCanNest,
-            const char* tLabel,
-            const std::string &tValue,
-            CssSelectors &&tCssSelectors,
-            CssRules &&tChildren
-        ) :
-            canNest{tCanNest},
-            label{tLabel},
-            valueOwned{tValue},
-            valueViewed{none},
-            selectors{std::move(tCssSelectors)},
-            children{std::move(tChildren)}
-        {}
-        CssRule (
-            bool tCanNest,
-            const char* tLabel,
-            const std::string_view tValue,
-            CssSelectors &&tCssSelectors,
-            CssRules &&tChildren
-        ) :
-            canNest{tCanNest},
-            label{tLabel},
-            valueOwned{none},
-            valueViewed{tValue},
-            selectors{std::move(tCssSelectors)},
-            children{std::move(tChildren)}
-        {}
+            bool tCanNest = false,
+            const char* tLabel = none,
+            Text&& tValue = {},
+            std::vector<Text>&& tSelectors = {},
+            std::vector<CssRule>&& tChildren = {}
+        ) : data {
+            tCanNest,
+            tLabel,
+            std::move(tValue),
+            std::move(tSelectors),
+            std::move(tChildren),
+        } {}
     };
 
-    template<const char* NAME>
+    template<const char* const NAME>
     struct CssProperty : CssRule {
-        CssProperty (std::string &&tValue) :
-            CssRule{false, NAME, std::move(tValue), {}, {}} {}
-        CssProperty (const char *tValue) :
-            CssRule{false, NAME, tValue, {}, {}} {}
-        CssProperty (const std::string &tValue) :
-            CssRule{false, NAME, tValue, {}, {}} {}
-        CssProperty (const std::string_view tValue) :
-            CssRule{false, NAME, tValue, {}, {}} {}
+        CssProperty (Text&& tValue) :
+            CssRule(false, NAME, std::move(tValue), {}, {})
+        {}
     };
 
-    template<const char* PREFIX>
+    template<const char* const PREFIX>
     struct CssAtSingle : CssRule {
-        CssAtSingle (CssSelectors &&tSelectors) :
-            CssRule{false, PREFIX, none, std::move(tSelectors), {}} {}
+        CssAtSingle (Text&& tSelector) :
+            CssRule(false, PREFIX, {}, {std::move(tSelector)}, {})
+        {}
+        CssAtSingle (std::initializer_list<Text>&& tSelectors) :
+            CssRule(false, PREFIX, {}, std::move(tSelectors), {})
+        {}
     };
 
-    template<const char* PREFIX>
+    template<const char* const PREFIX>
     struct CssAtNested : CssRule {
-        CssAtNested (CssSelectors &&tSelectors, CssRules &&tChildren) :
-            CssRule{true, PREFIX, none, std::move(tSelectors), std::move(tChildren)} {}
+        CssAtNested () :
+            CssRule(true, PREFIX, {}, {}, {})
+        {}
+        CssAtNested (Text&& tSelector) :
+            CssRule(true, PREFIX, {}, {std::move(tSelector)}, {})
+        {}
+        CssAtNested (std::initializer_list<Text>&& tSelectors) :
+            CssRule(true, PREFIX, {}, std::move(tSelectors), {})
+        {}
+        CssAtNested (Text&& tSelector, std::initializer_list<CssRule>&& tRules) :
+            CssRule(
+                true,
+                PREFIX,
+                {},
+                {std::move(tSelector)},
+                std::move(tRules)
+            )
+        {}
+        CssAtNested (std::initializer_list<Text>&& tSelectors, std::initializer_list<CssRule>&& tRules) :
+            CssRule(
+                true,
+                PREFIX,
+                {},
+                std::move(tSelectors),
+                std::move(tRules)
+            )
+        {}
+        template <class... T, class = CssRule>
+        CssAtNested (Text&& tSelector, T&& ...tRules) :
+            CssRule(
+                true,
+                PREFIX,
+                {},
+                {std::move(tSelector)},
+                {std::forward<T>(tRules)...}
+            )
+        {}
+        template <class... T, class = CssRule>
+        CssAtNested (std::initializer_list<Text>&& tSelectors, T&& ...tRules) :
+            CssRule(
+                true,
+                PREFIX,
+                {},
+                std::move(tSelectors),
+                {std::forward<T>(tRules)...}
+            )
+        {}
     };
 
     struct CssVar : CssRule {
-        CssVar (const char* tName, const std::string_view tValue) :
-            CssRule{false, tName, tValue, {}, {}} {}
+        CssVar (const char* tName, Text&& tValue) :
+            CssRule(false, tName, std::move(tValue), {}, {})
+        {}
     };
 
     namespace exports {
         template<const char* NAME>
         using property = CssProperty<NAME>;
         using rule = CssRule;
-        using styles = CssRules;
+        using styles = std::initializer_list<CssRule>;
         using prop = CssVar;
     }
 }}
@@ -239,50 +390,65 @@ namespace Webxx { namespace internal {
     constexpr char doctype[] = "<!doctype html>";
     constexpr char styleTag[] = "style";
 
-    enum class ValueType {
-        LITERAL = 0,
-        PLACEHOLDER = 1,
-    };
-
-    struct HtmlAttributeValue {
-        const std::string valueOwned;
-        const std::string_view valueViewed;
-        const ValueType valueType;
-
-        HtmlAttributeValue () :
-            valueViewed{none}, valueType{ValueType::LITERAL} {}
-        HtmlAttributeValue (const Placeholder &&tPlaceholder) :
-            valueOwned{std::move(tPlaceholder)}, valueType{ValueType::PLACEHOLDER} {}
-        HtmlAttributeValue (const std::string &&tValue) :
-            valueOwned{std::move(tValue)}, valueType{ValueType::LITERAL} {}
-        HtmlAttributeValue (const char *tValue) :
-            valueOwned{tValue}, valueType{ValueType::LITERAL} {}
-        HtmlAttributeValue (const std::string &tValue) :
-            valueOwned{tValue}, valueType{ValueType::LITERAL} {}
-        HtmlAttributeValue (const std::string_view tValue) :
-            valueViewed{tValue}, valueType{ValueType::LITERAL} {}
-    };
-
     typedef const char* HtmlAttributeName;
+
     struct HtmlAttribute {
-        const HtmlAttributeName name;
-        const std::vector<HtmlAttributeValue> values;
+        struct Data {
+            HtmlAttributeName name;
+            std::vector<Text> values;
+
+            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data);
+
+            Data (
+                HtmlAttributeName tName = none,
+                std::vector<Text>&& tValues = {}
+            ) :
+                name{tName},
+                values{std::move(tValues)}
+            {}
+        };
+
+        mutable Data data;
+
+        HtmlAttribute (HtmlAttribute&&) = default;            // move construct
+        HtmlAttribute& operator= (HtmlAttribute&&) = default; // move assign
+        HtmlAttribute (const HtmlAttribute& other) : data {   // copy construct
+            std::move(other.data)
+        } {}
+        HtmlAttribute& operator= (HtmlAttribute& other) {     // copy assign
+            this->data = std::move(other.data);
+            return *this;
+        }
+
+        HtmlAttribute (
+            HtmlAttributeName tName = none,
+            std::vector<Text>&& tValues = {}
+        ) : data {
+            tName,
+            std::move(tValues)
+        } {}
     };
 
     template<HtmlAttributeName NAME>
     struct HtmlAttributeDefined : public HtmlAttribute {
         HtmlAttributeDefined () :
-            HtmlAttribute{NAME, {}} {}
-        HtmlAttributeDefined (HtmlAttributeValue tValue) :
-            HtmlAttribute{NAME, {std::move(tValue)}} {}
-        HtmlAttributeDefined (std::initializer_list<HtmlAttributeValue> tValues) :
-            HtmlAttribute{NAME, tValues} {}
+            HtmlAttribute(NAME, {})
+        {}
+        HtmlAttributeDefined (std::vector<Text>&& values) :
+            HtmlAttribute(NAME, std::move(values))
+        {}
+        HtmlAttributeDefined (std::initializer_list<Text>&& values) :
+            HtmlAttribute(NAME, std::move(values))
+        {}
+        template <class... T, class = Text>
+        HtmlAttributeDefined (T&& ...values) :
+            HtmlAttribute(NAME, {std::forward<T>(values)...})
+        {}
     };
 
     typedef const char* TagName;
     typedef const char* Prefix;
-    typedef const bool SelfClosing;
-    typedef const bool StyleTarget;
+    typedef bool SelfClosing;
 
     enum CollectionTarget {
         NONE = 0,
@@ -297,57 +463,147 @@ namespace Webxx { namespace internal {
         TagName tagName;
         Prefix prefix;
         SelfClosing selfClosing;
-        CollectionTarget collects;
-        CollectionTarget collection;
+        CollectionTarget gathersCollection;
+        CollectionTarget emitsCollection;
+
+        HtmlNodeOptions (HtmlNodeOptions&&) = default;
+        HtmlNodeOptions& operator= (HtmlNodeOptions&& other) = default;
+        HtmlNodeOptions (const HtmlNodeOptions&) = delete;
+        HtmlNodeOptions& operator= (const HtmlNodeOptions&) = delete;
+
+        HtmlNodeOptions () :
+            tagName{none},
+            prefix{none},
+            selfClosing{false},
+            gathersCollection{NONE},
+            emitsCollection{NONE}
+        {}
+
+        HtmlNodeOptions (
+            TagName tTagName,
+            Prefix tPrefix,
+            SelfClosing tSelfClosing,
+            CollectionTarget tGathersCollection,
+            CollectionTarget tEmitsCollection
+        ) :
+            tagName{tTagName},
+            prefix{tPrefix},
+            selfClosing{tSelfClosing},
+            gathersCollection{tGathersCollection},
+            emitsCollection{tEmitsCollection}
+        {}
     };
 
-    typedef std::vector<HtmlAttribute> HtmlAttributes;
     struct HtmlNode;
-    typedef std::vector<HtmlNode> HtmlNodes;
+
     typedef std::string_view ComponentName;
-    typedef std::size_t ComponentType;
+    typedef std::size_t ComponentTypeId;
     typedef std::function<HtmlNode()> ContentProducer;
 
     struct HtmlNode {
-        const HtmlNodeOptions options{none, none, false, NONE, NONE};
-        const HtmlAttributes attributes;
-        mutable HtmlNodes children;
-        const std::string contentOwned;
-        const std::string_view contentViewed;
-        const ContentProducer contentLazy{};
-        const CssRules css;
-        const ComponentType componentType{0};
+        struct Data {
+            HtmlNodeOptions options{none, none, false, NONE, NONE};
+            std::vector<HtmlAttribute> attributes{};
+            std::vector<HtmlNode> children{};
+            Text content{};
+            ContentProducer contentLazy{};
+            std::vector<CssRule> css{};
+            ComponentTypeId componentTypeId{0};
 
-        HtmlNode ()
-        {}
-        HtmlNode (const Placeholder &&tPlaceholder) :
-            options{none, none, false, PLACEHOLDER, NONE},
-            contentOwned{std::move(tPlaceholder)}
-        {}
-        HtmlNode (const ContentProducer &&tContentProducer) :
-            contentLazy{std::move(tContentProducer)}
-        {}
-        HtmlNode (const std::string &&tContent) :
-            contentOwned{std::move(tContent)} {}
-        HtmlNode (const char *tContent) :
-            contentOwned{tContent} {}
-        HtmlNode (const std::string &tContent) :
-            contentOwned{tContent} {}
-        HtmlNode (const std::string_view tContent) :
-            contentViewed{tContent} {}
+            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data);
+
+            Data (
+                HtmlNodeOptions&& tOptions = {none, none, false, NONE, NONE},
+                std::vector<HtmlAttribute>&& tAttributes = {},
+                std::vector<HtmlNode>&& tChildren = {},
+                Text&& tContent = {},
+                ContentProducer&& tContentLazy = {},
+                std::vector<CssRule>&& tCss = {},
+                ComponentTypeId tComponentTypeId = 0
+            ) :
+                options{std::move(tOptions)},
+                attributes{std::move(tAttributes)},
+                children{std::move(tChildren)},
+                content{std::move(tContent)},
+                contentLazy{std::move(tContentLazy)},
+                css{std::move(tCss)},
+                componentTypeId{tComponentTypeId}
+            {}
+        };
+
+        mutable Data data;
+
+        HtmlNode (HtmlNode&&) = default;            // move construct
+        HtmlNode& operator= (HtmlNode&&) = default; // move assign
+        HtmlNode (const HtmlNode& other) : data {   // copy construct
+            std::move(other.data)
+        } {}
+        HtmlNode& operator= (HtmlNode& other) {     // copy assign
+            this->data = std::move(other.data);
+            return *this;
+        }
+
+        HtmlNode (Placeholder&& tPlaceholder) : data {
+            {none, none, false, PLACEHOLDER, NONE},
+            {},
+            {},
+            std::move(tPlaceholder),
+        } {}
+        HtmlNode (Text::LazyProducer&& tTextProducer) : data {
+            {none, none, false, NONE, NONE},
+            {},
+            {},
+            std::move(tTextProducer),
+        } {}
+        HtmlNode (ContentProducer&& tNodeProducer) : data {
+            {none, none, false, NONE, NONE},
+            {},
+            {},
+            {},
+            std::move(tNodeProducer),
+        } {}
+        HtmlNode (std::string&& tContent) : data {
+            {none, none, false, NONE, NONE},
+            {},
+            {},
+            std::move(tContent),
+        } {}
+        HtmlNode (const char* tContent) : data {
+            {none, none, false, NONE, NONE},
+            {},
+            {},
+            tContent,
+        } {}
+        HtmlNode (const std::string& tContent) : data {
+            {none, none, false, NONE, NONE},
+            {},
+            {},
+            tContent,
+        } {}
+        HtmlNode (const std::string_view tContent) : data {
+            {none, none, false, NONE, NONE},
+            {},
+            {},
+            std::move(tContent),
+        } {}
+
         HtmlNode (
-            HtmlNodeOptions &&tOptions,
-            HtmlAttributes &&tAttributes,
-            HtmlNodes &&tChildren,
-            CssRules &&tCss,
-            const ComponentType tComponentType
-        ) :
-            options{std::move(tOptions)},
-            attributes{std::move(tAttributes)},
-            children{std::move(tChildren)},
-            css{std::move(tCss)},
-            componentType{tComponentType}
-        {}
+            HtmlNodeOptions&& tOptions = {none, none, false, NONE, NONE},
+            std::vector<HtmlAttribute>&& tAttributes = {},
+            std::vector<HtmlNode>&& tChildren = {},
+            Text&& tContent = {},
+            ContentProducer&& tContentLazy = {},
+            std::vector<CssRule>&& tCss = {},
+            ComponentTypeId tComponentTypeId = 0
+        ) : data {
+            std::move(tOptions),
+            std::move(tAttributes),
+            std::move(tChildren),
+            std::move(tContent),
+            std::move(tContentLazy),
+            std::move(tCss),
+            tComponentTypeId
+        } {}
     };
 
     template<
@@ -359,36 +615,63 @@ namespace Webxx { namespace internal {
     >
     struct HtmlNodeDefined : public HtmlNode {
         HtmlNodeDefined () :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION}, {}, {}, {}, 0} {}
-        HtmlNodeDefined (std::initializer_list<HtmlNode> &&tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION}, {}, std::move(tChildren), {}, 0} {}
-        HtmlNodeDefined (HtmlNodes &&tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION}, {}, std::move(tChildren), {}, 0} {}
-        template<typename ...T>
-        HtmlNodeDefined (HtmlAttributes &&tAttributes, T&& ...tChildren) :
-            HtmlNode{{TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION}, std::move(tAttributes), {std::forward<T>(tChildren)...}, {}, 0} {}
+            HtmlNode(
+                {TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION}
+            )
+        {}
+        HtmlNodeDefined (std::vector<HtmlNode>&& tChildren) :
+            HtmlNode(
+                {TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION},
+                {},
+                std::move(tChildren)
+            )
+        {}
+        HtmlNodeDefined (std::initializer_list<HtmlNode>&& tChildren) :
+            HtmlNode(
+                {TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION},
+                {},
+                std::move(tChildren)
+            )
+        {}
+        template <class... T, class = HtmlNode>
+        HtmlNodeDefined (std::initializer_list<HtmlAttribute>&& tAttributes, T&& ...tChildren) :
+            HtmlNode(
+                {TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION},
+                std::move(tAttributes),
+                {std::forward<T>(tChildren)...}
+            )
+        {}
+        template <class... T, class = HtmlNode>
+        HtmlNodeDefined (std::vector<HtmlAttribute>&& tAttributes, T&& ...tChildren) :
+            HtmlNode(
+                {TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION},
+                std::move(tAttributes),
+                {std::forward<T>(tChildren)...}
+            )
+        {}
     };
 
     struct HtmlStyleNode : HtmlNode {
         HtmlStyleNode () :
-            HtmlNode{{styleTag, none, false, NONE, NONE}, {}, {}, {}, 0} {}
-        HtmlStyleNode (std::initializer_list<CssRule> &&tCss) :
-            HtmlNode{{styleTag, none, false, NONE, NONE}, {}, {}, std::move(tCss), 0} {}
+            HtmlNode({styleTag, none, false, NONE, NONE})
+        {}
+        HtmlStyleNode (std::initializer_list<CssRule>&& tCss) :
+            HtmlNode({styleTag, none, false, NONE, NONE}, {}, {}, {}, {}, std::move(tCss))
+        {}
         template<typename ...T>
-        HtmlStyleNode (HtmlAttributes &&tAttributes, T&& ...tCss) :
-            HtmlNode{{styleTag, none, false, NONE, NONE, NONE}, std::move(tAttributes), {}, {std::forward<T>(tCss)...}, 0} {}
+        HtmlStyleNode (std::initializer_list<HtmlAttribute>&& tAttributes, T&& ...tCss) :
+            HtmlNode({styleTag, none, false, NONE, NONE, NONE}, std::move(tAttributes), {}, {std::forward<T>(tCss)...})
+        {}
+        // HtmlStyleNode (std::initializer_list<HtmlAttributeProxy>&& tAttrs, std::initializer_list<CssRuleProxy>&& tCss) :
     };
 
     struct HtmlStyleCollectionNode : HtmlNode {
         HtmlStyleCollectionNode () :
-            HtmlNode{{none, none, false, NONE, CSS}, {}, {}, {}, 0} {}
+            HtmlNode({none, none, false, NONE, CSS})
+        {}
         HtmlStyleCollectionNode (std::initializer_list<CssRule> &&tCss) :
-            HtmlNode{{none, none, false, NONE, CSS}, {}, {}, std::move(tCss), 0} {}
-        HtmlStyleCollectionNode (CssRules &&tCss) :
-            HtmlNode{{none, none, false, NONE, CSS}, {}, {}, std::move(tCss), 0} {}
-        template<typename ...T>
-        HtmlStyleCollectionNode (HtmlAttributes &&tAttributes, T&& ...tCss) :
-            HtmlNode{{none, none, false, NONE, CSS}, std::move(tAttributes), {}, {std::forward<T>(tCss)...}, 0} {}
+            HtmlNode({none, none, false, NONE, CSS}, {}, {}, {}, {}, std::move(tCss))
+        {}
     };
 
     typedef HtmlNodeDefined<none, none, false, NONE, HEAD> HtmlHeadCollectionNode;
@@ -401,9 +684,9 @@ namespace Webxx { namespace internal {
         using attr = HtmlAttributeDefined<NAME>;
 
         using node = HtmlNode;
-        using nodes = HtmlNodes;
+        using nodes = std::vector<HtmlNode>;
         using children = std::initializer_list<HtmlNode>;
-        using attrs = HtmlAttributes;
+        using attrs = std::initializer_list<HtmlAttribute>;
 
         // HTML special purpose nodes:
         using doc = HtmlNodeDefined<none, doctype>;
@@ -412,9 +695,7 @@ namespace Webxx { namespace internal {
         using lazy = ContentProducer;
         using style = HtmlStyleNode;
         using styleTarget = HtmlNodeDefined<styleTag, none, false, CSS, NONE>;
-        using styleSrc = HtmlStyleCollectionNode;
         using headTarget = HtmlNodeDefined<none, none, false, HEAD, NONE>;
-        using headSrc = HtmlHeadCollectionNode;
     }
 }}
 
@@ -428,41 +709,63 @@ namespace Webxx { namespace internal {
 
     struct ComponentBase : public HtmlNode {
         ComponentBase (
-            const ComponentType tType,
-            HtmlStyleCollectionNode &&tCss,
-            HtmlNode &&tRoot,
-            HtmlHeadCollectionNode &&tHead
-        ) :
-            HtmlNode(
-                {none, none, false, NONE, NONE},
-                {},
-                {
-                    std::move(tRoot),
-                    std::move(tCss),
-                    std::move(tHead),
-                },
-                {},
-                tType
-            )
-        {}
+            const ComponentTypeId tTypeId,
+            HtmlStyleCollectionNode&& tCss,
+            HtmlNode&& tRoot,
+            HtmlHeadCollectionNode&& tHead
+        ) : HtmlNode(
+            {none, none, false, NONE, NONE},
+            {},
+            {
+                std::move(tRoot),
+                std::move(tCss),
+                std::move(tHead),
+            },
+            {},
+            {},
+            {},
+            tTypeId
+        ) {}
     };
 
-    template <class T>
+    template <typename T>
+    constexpr size_t ctHash () {
+        size_t hash{0};
+        for (const char& c : WEBXX_FN_SIG) {
+            (hash ^= (size_t) c) <<= 1;
+        }
+        return hash;
+    }
+
+    template <typename T>
+    constexpr size_t compileTimeTypeId = ctHash<T>();
+
+    template <class T, size_t K = compileTimeTypeId<T>>
     struct Component : public ComponentBase {
-        Component (HtmlNode&& tRootNode) : ComponentBase(
-            typeid(T).hash_code(),
+        constexpr Component (
+            HtmlNode
+            && tRootNode
+        ) : ComponentBase(
+            K,
             {},
             std::move(tRootNode),
             {}
         ) {}
-        Component (HtmlStyleCollectionNode &&tCss, HtmlNode&& tRootNode) : ComponentBase(
-            typeid(T).hash_code(),
+        constexpr Component (
+            HtmlStyleCollectionNode&& tCss,
+            HtmlNode&& tRootNode
+        ) : ComponentBase(
+            K,
             std::move(tCss),
             std::move(tRootNode),
             {}
         ) {}
-        Component (HtmlStyleCollectionNode &&tCss, HtmlNode&& tRootNode, HtmlHeadCollectionNode&& tHeadNode) : ComponentBase(
-            typeid(T).hash_code(),
+        constexpr Component (
+            HtmlStyleCollectionNode&& tCss,
+            HtmlNode&& tRootNode,
+            HtmlHeadCollectionNode&& tHeadNode
+        ) : ComponentBase(
+            K,
             std::move(tCss),
             std::move(tRootNode),
             std::move(tHeadNode)
@@ -485,44 +788,44 @@ namespace Webxx { namespace internal {
     constexpr char componentScopePrefix[] = "data-c";
 
     struct CollectedCss {
-        const ComponentType componentType;
-        const CssRules &css;
+        const ComponentTypeId componentTypeId;
+        const std::vector<CssRule>& css;
 
         bool operator == (const CollectedCss &other) const noexcept {
-            return (other.componentType == componentType);
+            return (other.componentTypeId == componentTypeId);
         }
     };
 
     struct CollectedHtml {
-        const ComponentType componentType;
-        const HtmlNodes &nodes;
+        const ComponentTypeId componentTypeId;
+        const std::vector<HtmlNode>& nodes;
 
         bool operator == (const CollectedHtml &other) const noexcept {
-            return (other.componentType == componentType);
+            return (other.componentTypeId == componentTypeId);
         }
     };
 }}
 
 template<>
 struct std::hash<Webxx::internal::CollectedCss> {
-    std::size_t operator() (const Webxx::internal::CollectedCss &collectedCss) const noexcept {
-        return std::hash<std::size_t>{}(collectedCss.componentType);
+    std::size_t operator() (const Webxx::internal::CollectedCss& collectedCss) const noexcept {
+        return collectedCss.componentTypeId;
     }
 };
 
 template<>
 struct std::hash<Webxx::internal::CollectedHtml> {
-    std::size_t operator() (const Webxx::internal::CollectedHtml &collectedHtml) const noexcept {
-        return std::hash<std::size_t>{}(collectedHtml.componentType);
+    std::size_t operator() (const Webxx::internal::CollectedHtml& collectedHtml) const noexcept {
+        return collectedHtml.componentTypeId;
     }
 };
 
 
 namespace Webxx { namespace internal {
-    typedef std::function<void(const std::string_view, std::string &)> RenderReceiverFn;
+    typedef std::function<void(const std::string_view, std::string&)> RenderReceiverFn;
     constexpr std::size_t renderBufferDefaultSize{16 * 1024};
 
-    inline void renderToInternalBuffer (const std::string_view data, std::string &buffer) {
+    inline void renderToInternalBuffer (const std::string_view data, std::string& buffer) {
         buffer.append(data);
     }
 
@@ -557,44 +860,45 @@ namespace Webxx { namespace internal {
         CollectedHtmls heads;
         RenderOptions options;
 
-        Collector(const RenderOptions &tOptions) :
+        Collector(const RenderOptions& tOptions) :
             csses{}, heads{}, options{tOptions} {};
 
-        void collect (const HtmlNode* node, const ComponentType currentComponent) {
-            ComponentType nextComponent = currentComponent;
-            if (node->componentType) {
-                nextComponent = node->componentType;
+        void collect (HtmlNode* node, const ComponentTypeId currentComponent) {
+            ComponentTypeId nextComponent = currentComponent;
+            if (node->data.componentTypeId) {
+                nextComponent = node->data.componentTypeId;
             }
 
-            if (node->options.collection == HEAD && !node->children.empty()) {
-                heads.insert({nextComponent, node->children});
+            if (node->data.options.emitsCollection == HEAD && !node->data.children.empty()) {
+                heads.insert({nextComponent, node->data.children});
             }
 
-            if (node->options.collection == CSS && !node->css.empty()) {
-                csses.insert({nextComponent, node->css});
+            if (node->data.options.emitsCollection == CSS && !node->data.css.empty()) {
+                csses.insert({nextComponent, node->data.css});
             }
 
-            if (node->contentLazy) {
-                node->children.push_back(node->contentLazy());
+            if (node->data.contentLazy) {
+                node->data.children.push_back(node->data.contentLazy());
             }
 
-            this->collect(&(node->children), nextComponent);
+            this->collect(&(node->data.children), nextComponent);
         }
 
-        void collect (const HtmlNodes* tNodes, const ComponentType currentComponent) {
+        template<class T>
+        void collect (std::vector<T>* tNodes, const ComponentTypeId currentComponent) {
             for (auto &node : *tNodes) {
                 this->collect(&node, currentComponent);
             }
         }
 
-        void collect (const void*, const ComponentType) {}
+        void collect (const void*, const ComponentTypeId) {}
     };
 
     struct Renderer {
-        const Collector &collector;
-        const RenderOptions &options;
+        const Collector& collector;
+        const RenderOptions& options;
 
-        Renderer(const Collector &tCollector, const RenderOptions &tOptions) :
+        Renderer(const Collector& tCollector, const RenderOptions& tOptions) :
             collector{tCollector}, options{tOptions}
         {
             options.renderBuffer.reserve(options.renderBufferSize);
@@ -611,27 +915,29 @@ namespace Webxx { namespace internal {
 
         public:
 
-        const std::string componentName (ComponentType type) {
+        const std::string componentName (ComponentTypeId type) {
             return std::to_string(type);
         }
 
-        void render (const HtmlAttribute &attribute, const ComponentType) {
-            sendToRender(attribute.name);
-            if (!attribute.values.empty()) {
+        void render (const HtmlAttribute& attribute, const ComponentTypeId) {
+            sendToRender(attribute.data.name);
+            if (!attribute.data.values.empty()) {
                 sendToRender("=\"");
                 bool shouldSeparate = false;
-                for(auto &value : attribute.values) {
+                for(auto &value : attribute.data.values) {
                     if (shouldSeparate) {
                         sendToRender(" ");
                     }
 
-                    switch (value.valueType) {
-                        case ValueType::LITERAL:
-                            sendToRender(value.valueOwned);
-                            sendToRender(value.valueViewed);
+                    switch (value.data.type) {
+                        case Text::Type::LITERAL:
+                            sendToRender(value.getView());
                             break;
-                        case ValueType::PLACEHOLDER:
-                            sendToRender(options.placeholderPopulator(value.valueOwned, attribute.name));
+                        case Text::Type::PLACEHOLDER:
+                            sendToRender(options.placeholderPopulator(value.getView(), attribute.data.name));
+                            break;
+                        case Text::Type::LAZY:
+                            // @todo Call producer fn.
                             break;
                     }
 
@@ -641,35 +947,42 @@ namespace Webxx { namespace internal {
             }
         }
 
-        void render (const HtmlAttributes &attributes, const ComponentType currentComponent) {
+        void render (const std::initializer_list<HtmlAttribute>& attributes, const ComponentTypeId currentComponent) {
             for (auto &attribute : attributes) {
                 sendToRender(" ");
                 render(attribute, currentComponent);
             }
         }
 
-        void render (const HtmlNode &node, const ComponentType currentComponent) {
-            ComponentType nextComponent = currentComponent;
-            if (node.componentType) {
-                nextComponent = node.componentType;
+        void render (const std::vector<HtmlAttribute>& attributes, const ComponentTypeId currentComponent) {
+            for (auto &attribute : attributes) {
+                sendToRender(" ");
+                render(attribute, currentComponent);
+            }
+        }
+
+        void render (const HtmlNode& node, const ComponentTypeId currentComponent) {
+            ComponentTypeId nextComponent = currentComponent;
+            if (node.data.componentTypeId) {
+                nextComponent = node.data.componentTypeId;
             }
 
-            if (node.options.collection != NONE) {
+            if (node.data.options.emitsCollection != NONE) {
                 // Nodes belonging to a collection will be rendered where they are collected:
                 return;
             }
 
-            if (strlen(node.options.prefix)) {
-                sendToRender(node.options.prefix);
+            if (strlen(node.data.options.prefix)) {
+                sendToRender(node.data.options.prefix);
             }
 
-            if (strlen(node.options.tagName)) {
+            if (strlen(node.data.options.tagName)) {
                 sendToRender("<");
-                sendToRender(node.options.tagName);
-                if (!node.attributes.empty()) {
-                    render(node.attributes, nextComponent);
+                sendToRender(node.data.options.tagName);
+                if (!node.data.attributes.empty()) {
+                    render(node.data.attributes, nextComponent);
                 }
-                if (node.options.selfClosing) {
+                if (node.data.options.selfClosing) {
                     sendToRender("/");
                 }
                 if (nextComponent) {
@@ -680,50 +993,56 @@ namespace Webxx { namespace internal {
                 sendToRender(">");
             }
 
-            if (node.options.collects == PLACEHOLDER) {
-                sendToRender(options.placeholderPopulator(node.contentOwned, node.options.tagName));
+            if (node.data.options.gathersCollection == PLACEHOLDER) {
+                sendToRender(options.placeholderPopulator(node.data.content.getView(), node.data.options.tagName));
             } else {
-                sendToRender(node.contentOwned);
-                sendToRender(node.contentViewed);
+                sendToRender(node.data.content.getView());
             }
 
-            if (!node.children.empty()) {
-                render(node.children, nextComponent);
+            if (!node.data.children.empty()) {
+                render(node.data.children, nextComponent);
             }
 
-            if (!node.css.empty()) {
-                render(node.css, 0);
+            if (!node.data.css.empty()) {
+                render(node.data.css, 0);
             }
 
-            if (node.options.collects == CSS) {
+            if (node.data.options.gathersCollection == CSS) {
                 render(collector.csses, nextComponent);
             }
 
-            if (node.options.collects == HEAD) {
+            if (node.data.options.gathersCollection == HEAD) {
                 render(collector.heads, nextComponent);
             }
 
-            if ((!node.options.selfClosing) && strlen(node.options.tagName)) {
+            if ((!node.data.options.selfClosing) && strlen(node.data.options.tagName)) {
                 sendToRender("</");
-                sendToRender(node.options.tagName);
+                sendToRender(node.data.options.tagName);
                 sendToRender(">");
             }
         }
 
-        void render (const HtmlNodes &tNodes, const ComponentType currentComponent) {
+        void render (const std::initializer_list<HtmlNode>& tNodes, const ComponentTypeId currentComponent) {
             for (auto &node : tNodes) {
                 render(node, currentComponent);
             }
         }
 
-        void render(const CssSelectors &selectors, const ComponentType currentComponent) {
+        void render (const std::vector<HtmlNode>& tNodes, const ComponentTypeId currentComponent) {
+            for (auto &node : tNodes) {
+                render(node, currentComponent);
+            }
+        }
+
+        // @todo This fn may not be correctly deduced as no longer CssSelectors.
+        void render(const std::initializer_list<Text>& selectors, const ComponentTypeId currentComponent) {
             bool shouldSeparate = false;
             for (auto &selector : selectors) {
                 if (shouldSeparate) {
                     sendToRender(",");
                 }
 
-                sendToRender(selector);
+                sendToRender(selector.getView());
 
                 if (currentComponent) {
                     sendToRender("[");
@@ -735,38 +1054,53 @@ namespace Webxx { namespace internal {
             }
         }
 
-        void render (const CssRule &rule, const ComponentType currentComponent) {
-            if (!rule.canNest) {
+        void render(const std::vector<Text>& selectors, const ComponentTypeId currentComponent) {
+            bool shouldSeparate = false;
+            for (auto &selector : selectors) {
+                if (shouldSeparate) {
+                    sendToRender(",");
+                }
+
+                sendToRender(selector.getView());
+
+                if (currentComponent) {
+                    sendToRender("[");
+                    sendToRender(componentScopePrefix);
+                    sendToRender(componentName(currentComponent));
+                    sendToRender("]");
+                }
+                shouldSeparate = true;
+            }
+        }
+
+        void render (const CssRule& rule, const ComponentTypeId currentComponent) {
+            if (!rule.data.canNest) {
                 // Single line rule:
-                sendToRender(rule.label);
-                if (!rule.selectors.empty()) {
+                sendToRender(rule.data.label);
+                if (!rule.data.selectors.empty()) {
                     sendToRender(" ");
-                    render(rule.selectors, 0);
+                    render(rule.data.selectors, 0);
                 }
-                if (!rule.valueOwned.empty()) {
+                if (!rule.data.value.getView().empty()) {
                     sendToRender(":");
-                    sendToRender(rule.valueOwned);
-                }
-                if (!rule.valueViewed.empty()) {
-                    sendToRender(":");
-                    sendToRender(rule.valueViewed);
+                    sendToRender(rule.data.value.getView());
                 }
                 sendToRender(";");
             } else {
                 // Nested rule:
-                if(strlen(rule.label)) {
+                if(strlen(rule.data.label)) {
                     // @rule (has a label and selectors):
-                    sendToRender(rule.label);
+                    sendToRender(rule.data.label);
                     sendToRender(" ");
-                    render(rule.selectors, 0);
+                    render(rule.data.selectors, 0);
                 } else {
                     // Style rule (has no label, only selectors):
-                    render(rule.selectors, currentComponent);
+                    render(rule.data.selectors, currentComponent);
                 }
 
                 sendToRender("{");
 
-                for (auto &child : rule.children) {
+                for (auto &child : rule.data.children) {
                     render(child, currentComponent);
                 }
 
@@ -774,28 +1108,34 @@ namespace Webxx { namespace internal {
             }
         }
 
-        void render (const CssRules &css, const ComponentType currentComponent) {
+        void render (const std::initializer_list<CssRule>& css, const ComponentTypeId currentComponent) {
             for (auto &rule : css) {
                 render(rule, currentComponent);
             }
         }
 
-        void render (const CollectedCsses &collectedCsses, const ComponentType) {
-            for (auto &collectedCss : collectedCsses) {
-                render(collectedCss.css, collectedCss.componentType);
+        void render (const std::vector<CssRule>& css, const ComponentTypeId currentComponent) {
+            for (auto &rule : css) {
+                render(rule, currentComponent);
             }
         }
 
-        void render (const CollectedHtmls &collectedHtmls, const ComponentType) {
+        void render (const CollectedCsses& collectedCsses, const ComponentTypeId) {
+            for (auto &collectedCss : collectedCsses) {
+                render(collectedCss.css, collectedCss.componentTypeId);
+            }
+        }
+
+        void render (const CollectedHtmls& collectedHtmls, const ComponentTypeId) {
             for (auto &collectedHtml : collectedHtmls) {
-                render(collectedHtml.nodes, collectedHtml.componentType);
+                render(collectedHtml.nodes, collectedHtml.componentTypeId);
             }
         }
     };
 
     namespace exports {
         template<typename V>
-        Collector collect (V&& tNode, const RenderOptions &options) {
+        Collector collect (V&& tNode, const RenderOptions& options) {
             Collector collector(options);
             collector.collect(&tNode, 0);
             return collector;
@@ -807,7 +1147,7 @@ namespace Webxx { namespace internal {
         }
 
         template<typename T>
-        std::string render (T&& thing, const RenderOptions &&options) {
+        std::string render (T&& thing, const RenderOptions&& options) {
             Collector collector = collect(thing, options);
             Renderer renderer(collector, options);
             renderer.render(std::forward<T>(thing), 0);
@@ -820,7 +1160,7 @@ namespace Webxx { namespace internal {
         }
 
         template<typename T>
-        std::string renderCss (T&& thing, const RenderOptions &&options) {
+        std::string renderCss (T&& thing, const RenderOptions&& options) {
             Collector collector = collect(thing, options);
             Renderer renderer(collector, options);
             renderer.render(collector.csses, 0);
@@ -844,25 +1184,114 @@ namespace Webxx { namespace internal {
 
     namespace exports {
 
-        template<typename T, typename F>
-        fragment each (T&& items, F&& cb) {
-            HtmlNodes tNodes;
+        template<class T, typename F>
+        fragment each (const T& items, F&& cb) {
+            std::vector<HtmlNode> tNodes;
             tNodes.reserve(items.size());
 
-            for (auto &item : items) {
+            for (const auto& item : items) {
                 tNodes.push_back(cb(item));
             }
 
             return fragment{std::move(tNodes)};
         }
 
-        template<typename C, typename T>
-        fragment each (T&& items) {
-            HtmlNodes tNodes;
+        template<class T, typename F>
+        fragment each (T &&items, F&& cb) {
+            std::vector<HtmlNode>  tNodes;
             tNodes.reserve(items.size());
 
-            for (auto &item : items) {
-                tNodes.push_back(C{std::forward<typename T::value_type>(item)});
+            for (auto&& item : items) {
+                tNodes.push_back(cb(std::forward<decltype(item)>(item)));
+            }
+
+            return fragment{std::move(tNodes)};
+        }
+
+        template<typename C, class T>
+        fragment each (const T& items) {
+            std::vector<HtmlNode>  tNodes;
+            tNodes.reserve(items.size());
+
+            for (const auto& item : items) {
+                tNodes.push_back(C{item});
+            }
+
+            return fragment{std::move(tNodes)};
+        }
+
+        template<typename C, class T, typename V = typename std::remove_reference<T>::type::value_type>
+        fragment each (T&& items) {
+            std::vector<HtmlNode> tNodes;
+            tNodes.reserve(items.size());
+
+            for (auto&& item : items) {
+                tNodes.push_back(C{std::forward<V>(item)});
+            }
+
+            return fragment{std::move(tNodes)};
+        }
+
+        struct Loop {
+            size_t index;
+            size_t count;
+        };
+
+        template<class T, typename F>
+        fragment loop (const T& items, F&& cb) {
+            std::vector<HtmlNode>  tNodes;
+            tNodes.reserve(items.size());
+
+            size_t i{0};
+            size_t n{items.size()};
+            for (const auto& item : items) {
+                tNodes.push_back(cb(item, Loop{i,n}));
+                ++i;
+            }
+
+            return fragment{std::move(tNodes)};
+        }
+
+        template<class T, typename F>
+        fragment loop (T&& items, F&& cb) {
+            std::vector<HtmlNode>  tNodes;
+            tNodes.reserve(items.size());
+
+            size_t i{0};
+            size_t n{items.size()};
+            for (auto&& item : items) {
+                tNodes.push_back(cb(std::forward<decltype(item)>(item), Loop{i,n}));
+                ++i;
+            }
+
+            return fragment{std::move(tNodes)};
+        }
+
+        template<typename C, class T>
+        fragment loop (const T& items) {
+            std::vector<HtmlNode>  tNodes;
+            tNodes.reserve(items.size());
+
+            size_t i{0};
+            size_t n{items.size()};
+            for (const auto& item : items) {
+                tNodes.push_back(C{item, Loop{i,n}});
+                ++i;
+            }
+
+            return fragment{std::move(tNodes)};
+        }
+
+        template<typename C, class T, typename V = typename std::remove_reference<T>::type::value_type>
+        fragment loop (T&& items) {
+            std::vector<HtmlNode>  tNodes;
+            tNodes.reserve(items.size());
+
+            size_t i{0};
+            size_t n{items.size()};
+            for (auto&& item : items) {
+                tNodes.push_back(C{std::forward<V>(item), Loop{i,n}});
+                ++i;
             }
 
             return fragment{std::move(tNodes)};
@@ -889,7 +1318,7 @@ namespace Webxx { namespace internal {
             if (condition) {
                 return attr;
             }
-            return HtmlAttributeDefined<none>{};
+            return HtmlAttribute{};
         }
     }
 }}

@@ -91,13 +91,13 @@ namespace Webxx { namespace internal {
     };
 
     using PlaceholderPopulator = std::function<const std::string_view(
-        const std::string_view,
-        const std::string_view
+        const std::string_view&,
+        const std::string_view&
     )>;
 
     inline const std::string_view noopPopulator (
-        const std::string_view value,
-        const std::string_view
+        const std::string_view& value,
+        const std::string_view&
     ) {
         return value;
     }
@@ -502,13 +502,13 @@ namespace Webxx { namespace internal {
 
     struct HtmlNode {
         struct Data {
-            HtmlNodeOptions options{none, none, false, NONE, NONE};
-            std::vector<HtmlAttribute> attributes{};
-            std::vector<HtmlNode> children{};
-            Text content{};
-            ContentProducer contentLazy{};
-            std::vector<CssRule> css{};
-            ComponentTypeId componentTypeId{0};
+            HtmlNodeOptions options;
+            std::vector<HtmlAttribute> attributes;
+            std::vector<HtmlNode> children;
+            Text content;
+            ContentProducer contentLazy;
+            std::vector<CssRule> css;
+            ComponentTypeId componentTypeId;
 
             WEBXX_MOVE_ONLY_CONSTRUCTORS(Data)
 
@@ -822,10 +822,10 @@ struct std::hash<Webxx::internal::CollectedHtml> {
 
 
 namespace Webxx { namespace internal {
-    typedef std::function<void(const std::string_view, std::string&)> RenderReceiverFn;
+    typedef std::function<void(const std::string_view&, std::string&)> RenderReceiverFn;
     constexpr std::size_t renderBufferDefaultSize{16 * 1024};
 
-    inline void renderToInternalBuffer (const std::string_view data, std::string& buffer) {
+    inline void renderToInternalBuffer (const std::string_view& data, std::string& buffer) {
         buffer.append(data);
     }
 
@@ -909,7 +909,7 @@ namespace Webxx { namespace internal {
 
         private:
 
-        void sendToRender (const std::string_view rendered) {
+        inline void sendToRender (const std::string_view& rendered) {
             options.renderReceiverFn(rendered, options.renderBuffer);
         }
 
@@ -1239,13 +1239,13 @@ namespace Webxx { namespace internal {
 
         template<class T, typename F>
         fragment loop (const T& items, F&& cb) {
-            std::vector<HtmlNode>  tNodes;
+            std::vector<HtmlNode> tNodes;
             tNodes.reserve(items.size());
 
             size_t i{0};
             size_t n{items.size()};
             for (const auto& item : items) {
-                tNodes.push_back(cb(item, Loop{i,n}));
+                tNodes.push_back(std::move(cb(item, Loop{i,n})));
                 ++i;
             }
 
@@ -1260,7 +1260,7 @@ namespace Webxx { namespace internal {
             size_t i{0};
             size_t n{items.size()};
             for (auto&& item : items) {
-                tNodes.push_back(cb(std::forward<decltype(item)>(item), Loop{i,n}));
+                tNodes.push_back(std::move(cb(std::forward<decltype(item)>(item), Loop{i,n})));
                 ++i;
             }
 

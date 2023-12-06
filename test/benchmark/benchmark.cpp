@@ -2,13 +2,17 @@
 #include "inja/inja.hpp"
 #include "webxx.h"
 
+#include <array>
+
 using namespace Webxx;
 
-typedef const char* Input;
-constexpr static char helloWorld[]{"Hello world."};
-constexpr static char something[]{"something"};
-constexpr static char somethingElse[]{"Something else."};
 
+typedef const char* Input;
+constexpr static const char* helloWorld{"Hello world."};
+constexpr static const char* something{"something"};
+constexpr static const char* somethingElse{"Something else."};
+constexpr size_t nMany{1000};
+constexpr std::array<size_t,nMany> nItems{};
 
 ////|                  |////
 ////|  Single element  |////
@@ -145,6 +149,87 @@ static void multiElementStringAppend (benchmark::State& state) {
 }
 BENCHMARK(multiElementStringAppend);
 
+
+////|                |////
+////|  Many-element  |////
+////|                |////
+
+
+std::string render1kElementInja (Input a, Input b, Input c) {
+    inja::json data;
+
+    data["n"] = nItems;
+    data["a"] = a;
+    data["b"] = b;
+    data["c"] = c;
+    return inja::render(
+        "<ol>"
+        "{% for i in n %}"
+        "<li class=\"{{ b }}\">{{ loop.index }}<h1>{{ a }}</h1><p>{{ c }}</p></li>"
+        "{% endfor %}"
+        "</ol>"
+    , data);
+}
+
+static void loop1kInja (benchmark::State& state) {
+    for (auto _ : state) {
+        benchmark::DoNotOptimize(render1kElementInja(helloWorld, something, somethingElse));
+        benchmark::ClobberMemory();
+    }
+}
+BENCHMARK(loop1kInja);
+
+std::string render1kElementWebxx (Input a, Input b, Input c) {
+    return render(ol{
+        loop(nItems, [a,b,c] (const auto&, auto&& loop) {
+            return li{{_class{b}},
+                std::to_string(loop.index),
+                h1{a},
+                p{c},
+            };
+        }),
+    });
+}
+
+static void loop1kWebxx (benchmark::State& state) {
+    for (auto _ : state) {
+        benchmark::DoNotOptimize(render1kElementWebxx(helloWorld, something, somethingElse));
+        benchmark::ClobberMemory();
+    }
+}
+BENCHMARK(loop1kWebxx);
+
+std::string render1kStringAppend (Input a, Input b, Input c) {
+    std::string html;
+
+    html.append("<ol>");
+    int i{0};
+    for (auto& _ : nItems) {
+        html.append("<li class=\"");
+        html.append(b);
+        html.append("\">");
+        html.append(std::to_string(i)),
+        html.append("<h1>");
+        html.append(a);
+        html.append("</h1>");
+        html.append("<p>");
+        html.append(c);
+        html.append("</p>");
+        html.append("</li>");
+        ++i;
+    }
+    html.append("</ol>");
+
+    return html;
+}
+
+static void loop1kStringAppend (benchmark::State& state) {
+    for (auto _ : state) {
+        benchmark::DoNotOptimize(render1kStringAppend(helloWorld, something, somethingElse));
+        benchmark::ClobberMemory();
+    }
+}
+BENCHMARK(loop1kStringAppend);
 
 
 BENCHMARK_MAIN();

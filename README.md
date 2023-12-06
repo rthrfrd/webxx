@@ -151,10 +151,17 @@ int main () {
     - `continue` -> `continue_`
     - `float` -> `float_`
 
-### Memory safety
+### Memory safety & efficiency
 
+- The type of value you provide as content to webxx elements/attributes/etc generally determines whether webxx will make a copy of the value or not:
+  - __Will not result in a copy:__
+    - `[const] char*`
+    - `[const] std::string_view`
+    - `[const] std::string&&`
+  - __Will result in a copy:__
+    - `[const] std::string`
 - As it is possible to render elements at a different time from constructing them, __you must make sure that the objects you reference in your document have not been destroyed before you render__.
-- It is encouraged to use `std::move` to move variables into the components where they are needed, both for performance and to ensure they remain in scope.
+- It is encouraged to use `std::move` to move variables into the components where they are needed, both for performance and to ensure their lifetimes are extended to that of the webxx document.
 - Alternatively you can pass in variables by value, so that the document retains its own copy of the data it needs to render, which cannot fall out of scope.
 - Additional care must be taken when providing `std::string_view`s to the document. While performant, you must ensure the underlying string has not been destroyed.
 
@@ -399,33 +406,39 @@ render(myDiv); // <div><h1>Hello</h1><p>world</p></div>
 Some basic [benchmarks](test/benchmark/benchmark.cpp) are built at `build/test/benchmark/webxx_benchmark` using [google-benchmark](https://github.com/google/benchmark.git). Webxx appears to be ~5-30x faster than using a template language like [inja](https://github.com/pantor/inja).
 
 ```sh
-# gcc-13 on macOS Ventura:
-Running build/test/benchmark/webxx_benchmark
---------------------------------------------------------------------
-Benchmark                          Time             CPU   Iterations
---------------------------------------------------------------------
-singleElementInja               9638 ns         9557 ns        71357
-singleElementWebxx               341 ns          341 ns      1966635
-singleElementSprintf             135 ns          135 ns      4925173
-singleElementStringAppend       69.0 ns         68.9 ns      9895112
-multiElementInja               11138 ns        11124 ns        59700
-multiElementWebxx               1768 ns         1765 ns       367132
-multiElementSprintf              199 ns          198 ns      3621183
-multiElementStringAppend         365 ns          363 ns      1952036
-
 # clang-14 on macOS Ventura:
 Running build/test/benchmark/webxx_benchmark
 --------------------------------------------------------------------
 Benchmark                          Time             CPU   Iterations
 --------------------------------------------------------------------
-singleElementInja               7089 ns         7052 ns        97962
-singleElementWebxx               266 ns          264 ns      2707292
-singleElementSprintf            77.3 ns         77.1 ns      8468835
-singleElementStringAppend       27.9 ns         27.9 ns     25437156
-multiElementInja                9613 ns         9597 ns        67738
-multiElementWebxx               1733 ns         1731 ns       385622
-multiElementSprintf              182 ns          182 ns      3780494
-multiElementStringAppend         221 ns          220 ns      2994178
+singleElementInja               6669 ns         6659 ns        93880
+singleElementWebxx               308 ns          308 ns      2132943
+singleElementSprintf            78.0 ns         77.0 ns      9085363
+singleElementStringAppend       29.2 ns         29.2 ns     23518976
+multiElementInja                9823 ns         9809 ns        64866
+multiElementWebxx               1104 ns         1103 ns       580797
+multiElementSprintf              180 ns          180 ns      3655352
+multiElementStringAppend         227 ns          227 ns      3144951
+loop1kInja                   1490008 ns      1487798 ns          445
+loop1kWebxx                  1056290 ns      1055672 ns          573
+loop1kStringAppend            113641 ns       113453 ns         5720
+
+# gcc-13 on macOS Ventura:
+Running build/test/benchmark/webxx_benchmark
+--------------------------------------------------------------------
+Benchmark                          Time             CPU   Iterations
+--------------------------------------------------------------------
+singleElementInja               8512 ns         8498 ns        73041
+singleElementWebxx               338 ns          337 ns      1894329
+singleElementSprintf             134 ns          134 ns      4876384
+singleElementStringAppend       67.5 ns         67.4 ns      9566632
+multiElementInja               10743 ns        10730 ns        57228
+multiElementWebxx               1086 ns         1085 ns       586441
+multiElementSprintf              185 ns          185 ns      3657129
+multiElementStringAppend         331 ns          331 ns      1979879
+loop1kInja                   1198717 ns      1197285 ns          527
+loop1kWebxx                  1144286 ns      1142437 ns          531
+loop1kStringAppend             87491 ns        87340 ns         7123
 ```
 
 ## 🛠 Development

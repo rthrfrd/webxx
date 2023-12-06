@@ -426,34 +426,34 @@ Running build/test/benchmark/webxx_benchmark
 --------------------------------------------------------------------
 Benchmark                          Time             CPU   Iterations
 --------------------------------------------------------------------
-singleElementInja               6931 ns         6903 ns        92916
-singleElementWebxx               313 ns          312 ns      2079910
-singleElementSprintf            72.3 ns         72.2 ns      8619947
-singleElementStringAppend       27.3 ns         27.3 ns     25593121
-multiElementInja                9246 ns         9241 ns        65841
-multiElementWebxx               1092 ns         1091 ns       596466
-multiElementSprintf              183 ns          183 ns      3755103
-multiElementStringAppend         226 ns          225 ns      3054568
-loop1kInja                   1532127 ns      1527643 ns          440
-loop1kWebxx                  1048143 ns      1047156 ns          557
-loop1kStringAppend            114855 ns       114706 ns         5603
+singleElementInja               7689 ns         7577 ns        90478
+singleElementWebxx               242 ns          242 ns      2601534
+singleElementSprintf            77.0 ns         76.9 ns      8749016
+singleElementStringAppend       27.8 ns         27.7 ns     25045977
+multiElementInja                9819 ns         9800 ns        65152
+multiElementWebxx               1077 ns         1071 ns       626847
+multiElementSprintf              191 ns          189 ns      3580471
+multiElementStringAppend         223 ns          222 ns      2990494
+loop1kInja                   1586433 ns      1583000 ns          417
+loop1kWebxx                   954590 ns       952975 ns          667
+loop1kStringAppend            112652 ns       112369 ns         5784
 
 # gcc-13 on macOS Ventura:
 Running build/test/benchmark/webxx_benchmark
 --------------------------------------------------------------------
 Benchmark                          Time             CPU   Iterations
 --------------------------------------------------------------------
-singleElementInja               9199 ns         9176 ns        73954
-singleElementWebxx               385 ns          383 ns      1817979
-singleElementSprintf             148 ns          147 ns      4709397
-singleElementStringAppend       70.7 ns         70.4 ns      9795005
-multiElementInja               11623 ns        11586 ns        59034
-multiElementWebxx               1153 ns         1149 ns       585867
-multiElementSprintf              199 ns          199 ns      3442070
-multiElementStringAppend         360 ns          359 ns      1912412
-loop1kInja                   1217383 ns      1215213 ns          536
-loop1kWebxx                  1152103 ns      1150649 ns          547
-loop1kStringAppend             92980 ns        92784 ns         7253
+singleElementInja               6804 ns         6787 ns        95385
+singleElementWebxx               240 ns          239 ns      2579599
+singleElementSprintf            74.8 ns         74.7 ns      8870416
+singleElementStringAppend       27.6 ns         27.5 ns     25333039
+multiElementInja                9630 ns         9616 ns        65712
+multiElementWebxx               1015 ns         1013 ns       622698
+multiElementSprintf              177 ns          177 ns      3706096
+multiElementStringAppend         211 ns          210 ns      3207111
+loop1kInja                   1537252 ns      1519808 ns          426
+loop1kWebxx                   927711 ns       926574 ns          659
+loop1kStringAppend            113185 ns       113055 ns         5656
 ```
 
 ## 🛠 Development

@@ -198,6 +198,14 @@ TEST_SUITE("Node") {
         }
     }
 
+    TEST_CASE("Node can have partial lazy string content") {
+        h1 node{"Hello", lazy{[] () { return " world";}}};
+
+        SUBCASE("Node with partial lazy string content can be rendered") {
+            CHECK(render(node) == "<h1>Hello world</h1>");
+        }
+    }
+
     TEST_CASE("Node can have lazy child content") {
         h1 node{lazy{[] () {
             return a{"Hello world"};

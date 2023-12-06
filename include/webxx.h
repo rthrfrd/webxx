@@ -117,18 +117,14 @@ namespace Webxx { namespace internal {
 namespace Webxx { namespace internal {
 
     struct Text {
-        using LazyProducer = std::function<std::string()>;
-
         enum class Type {
             LITERAL = 0,
             PLACEHOLDER = 1,
-            LAZY = 2,
         };
 
         struct Data {
             std::string own;
             std::string_view view;
-            LazyProducer producer;
             Type type;
 
             WEBXX_MOVE_ONLY_CONSTRUCTORS(Data)
@@ -136,12 +132,10 @@ namespace Webxx { namespace internal {
             Data (
                 const std::string& tOwn = none,
                 std::string_view tView = none,
-                LazyProducer&& tProducer = nullptr,
                 Type tType = Type::LITERAL
             ) :
                 own{tOwn},
                 view{tView},
-                producer{std::move(tProducer)},
                 type{tType}
             {}
         };
@@ -177,14 +171,7 @@ namespace Webxx { namespace internal {
         Text (Placeholder&& tPlaceholder) : data {
             std::move(tPlaceholder), // own
             {},
-            {},
             Text::Type::PLACEHOLDER
-        } {}
-        Text (LazyProducer&& tLazyProducer) : data {
-            {},
-            {},
-            std::move(tLazyProducer), // producer
-            Text::Type::LAZY
         } {}
 
         inline std::string_view getView () const {
@@ -548,12 +535,6 @@ namespace Webxx { namespace internal {
             {},
             {},
             std::move(tPlaceholder),
-        } {}
-        HtmlNode (Text::LazyProducer&& tTextProducer) : data {
-            {none, none, false, NONE, NONE},
-            {},
-            {},
-            std::move(tTextProducer),
         } {}
         HtmlNode (ContentProducer&& tNodeProducer) : data {
             {none, none, false, NONE, NONE},
@@ -936,9 +917,6 @@ namespace Webxx { namespace internal {
                         case Text::Type::PLACEHOLDER:
                             sendToRender(options.placeholderPopulator(value.getView(), attribute.data.name));
                             break;
-                        case Text::Type::LAZY:
-                            // @todo Call producer fn.
-                            break;
                     }
 
                     shouldSeparate = true;
@@ -1034,7 +1012,6 @@ namespace Webxx { namespace internal {
             }
         }
 
-        // @todo This fn may not be correctly deduced as no longer CssSelectors.
         void render(const std::initializer_list<Text>& selectors, const ComponentTypeId currentComponent) {
             bool shouldSeparate = false;
             for (auto &selector : selectors) {

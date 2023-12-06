@@ -216,6 +216,28 @@ TEST_SUITE("Node") {
         }
     }
 
+    TEST_CASE("Node can have placeholder content") {
+        const std::string_view value{" world"};
+
+        h1 node{"Hello", _{value}};
+
+        SUBCASE("Node with placeholder content can be rendered") {
+            CHECK(render(node) == "<h1>Hello world</h1>");
+        }
+    }
+
+    TEST_CASE("Node can have custom placeholder content") {
+        auto customPopulator = [] (const std::string_view&, const std::string_view) -> std::string_view {
+            return " world";
+        };
+
+        h1 node{"Hello", _{"ignored"}};
+
+        SUBCASE("Node with placeholder content can be rendered") {
+            CHECK(render(node, {customPopulator}) == "<h1>Hello world</h1>");
+        }
+    }
+
     TEST_CASE("Node can have multiple text content") {
         h1 node{"Hello", " world"};
 

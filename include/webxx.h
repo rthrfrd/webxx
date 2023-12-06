@@ -1242,11 +1242,10 @@ namespace Webxx { namespace internal {
             std::vector<HtmlNode> tNodes;
             tNodes.reserve(items.size());
 
-            size_t i{0};
-            size_t n{items.size()};
+            Loop loop {0, items.size()};
             for (const auto& item : items) {
-                tNodes.push_back(std::move(cb(item, Loop{i,n})));
-                ++i;
+                tNodes.push_back(std::move(cb(item, loop)));
+                ++loop.index;
             }
 
             return fragment{std::move(tNodes)};
@@ -1257,11 +1256,10 @@ namespace Webxx { namespace internal {
             std::vector<HtmlNode>  tNodes;
             tNodes.reserve(items.size());
 
-            size_t i{0};
-            size_t n{items.size()};
+            Loop loop {0, items.size()};
             for (auto&& item : items) {
-                tNodes.push_back(std::move(cb(std::forward<decltype(item)>(item), Loop{i,n})));
-                ++i;
+                tNodes.push_back(std::move(cb(std::forward<decltype(item)>(item), loop)));
+                ++loop.index;
             }
 
             return fragment{std::move(tNodes)};
@@ -1272,11 +1270,10 @@ namespace Webxx { namespace internal {
             std::vector<HtmlNode>  tNodes;
             tNodes.reserve(items.size());
 
-            size_t i{0};
-            size_t n{items.size()};
+            Loop loop {0, items.size()};
             for (const auto& item : items) {
-                tNodes.push_back(C{item, Loop{i,n}});
-                ++i;
+                tNodes.push_back(C{item, loop});
+                ++loop.index;
             }
 
             return fragment{std::move(tNodes)};
@@ -1287,11 +1284,10 @@ namespace Webxx { namespace internal {
             std::vector<HtmlNode>  tNodes;
             tNodes.reserve(items.size());
 
-            size_t i{0};
-            size_t n{items.size()};
+            Loop loop {0, items.size()};
             for (auto&& item : items) {
-                tNodes.push_back(C{std::forward<V>(item), Loop{i,n}});
-                ++i;
+                tNodes.push_back(C{std::forward<V>(item), loop});
+                ++loop.index;
             }
 
             return fragment{std::move(tNodes)};

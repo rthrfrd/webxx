@@ -23,6 +23,7 @@ FetchContent_MakeAvailable(benchmark inja)
 set(BENCHMARK_MAIN ${WEBXX_NS}_benchmark)
 add_executable(${BENCHMARK_MAIN} benchmark.cpp)
 target_compile_features(${BENCHMARK_MAIN} PRIVATE cxx_std_17)
+target_compile_options(${BENCHMARK_MAIN} PRIVATE -flto -O3)
 target_include_directories(
     ${WEBXX_NAME} INTERFACE
     ${PROJECT_SOURCE_DIR}/include

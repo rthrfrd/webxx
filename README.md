@@ -184,7 +184,7 @@ struct TodoItemData {
 struct TodoItem : component<TodoItem> {
     // Paramters are defined in the constructor:
     TodoItem (TodoItemData &&todoItem) : component<TodoItem> {
-        // CSS (which can be omitted):
+        // CSS (optional, can be omitted):
         {
             {"li.completed",
                 textDecoration{"line-through"},
@@ -197,6 +197,11 @@ struct TodoItem : component<TodoItem> {
             // ...followed by content:
             todoItem.description,
         },
+        // 'Head elements' - to add to <head> (optional, can be omitted):
+        {
+            // Useful for e.g. preloading assets that this component might use:
+            link{{_rel{"preload"}, _href{"/background.gif"}, _as{"image"}, _type{"image/gif"}}},
+        }
     } {}
 };
 ```
@@ -243,6 +248,8 @@ struct TodoPage : component<TodoPage> {
                     title{"Todo"},
                     // Special element to collect all component CSS:
                     styleTarget{},
+                    // Special element to collect all component head elements:
+                    headTarget{},
                 },
                 body{
                     std::move(titleEl),
@@ -265,7 +272,7 @@ auto pageHtml = render(TodoPage{
 });
 ```
 
-__The `styleTarget` element must appear somewhere in the HTML, in order for the CSS defined in each component to work.__
+__The `styleTarget` element must appear somewhere in the HTML, in order for the CSS defined in each component to work. Likewise for the `headTarget` and component 'head elements'.__
 
 ### 2. Loops, Conditionals & Fragments
 
@@ -283,6 +290,14 @@ fragment byLambda = each(letters, [] (std::string letter) {
 fragment byTemplate = each<li>(letters);
 
 auto isSame = render(byLambda) == render(byTemplate); // is true
+```
+
+The `loop` function behaves the same as `each`, but additionally provides a second parameter to the callback with information about the loop:
+
+```c++
+loop(letters, [] (const std::string& letter, const Loop& loop) {
+    return li { std::to_string(loop.index), ": ", letter };
+});
 ```
 
 A `fragment` contains all the generated elements for each item. A `fragment` is an "invisible" element; it will not show up in the rendered output (but its children will).
@@ -411,34 +426,34 @@ Running build/test/benchmark/webxx_benchmark
 --------------------------------------------------------------------
 Benchmark                          Time             CPU   Iterations
 --------------------------------------------------------------------
-singleElementInja               6669 ns         6659 ns        93880
-singleElementWebxx               308 ns          308 ns      2132943
-singleElementSprintf            78.0 ns         77.0 ns      9085363
-singleElementStringAppend       29.2 ns         29.2 ns     23518976
-multiElementInja                9823 ns         9809 ns        64866
-multiElementWebxx               1104 ns         1103 ns       580797
-multiElementSprintf              180 ns          180 ns      3655352
-multiElementStringAppend         227 ns          227 ns      3144951
-loop1kInja                   1490008 ns      1487798 ns          445
-loop1kWebxx                  1056290 ns      1055672 ns          573
-loop1kStringAppend            113641 ns       113453 ns         5720
+singleElementInja               6931 ns         6903 ns        92916
+singleElementWebxx               313 ns          312 ns      2079910
+singleElementSprintf            72.3 ns         72.2 ns      8619947
+singleElementStringAppend       27.3 ns         27.3 ns     25593121
+multiElementInja                9246 ns         9241 ns        65841
+multiElementWebxx               1092 ns         1091 ns       596466
+multiElementSprintf              183 ns          183 ns      3755103
+multiElementStringAppend         226 ns          225 ns      3054568
+loop1kInja                   1532127 ns      1527643 ns          440
+loop1kWebxx                  1048143 ns      1047156 ns          557
+loop1kStringAppend            114855 ns       114706 ns         5603
 
 # gcc-13 on macOS Ventura:
 Running build/test/benchmark/webxx_benchmark
 --------------------------------------------------------------------
 Benchmark                          Time             CPU   Iterations
 --------------------------------------------------------------------
-singleElementInja               8512 ns         8498 ns        73041
-singleElementWebxx               338 ns          337 ns      1894329
-singleElementSprintf             134 ns          134 ns      4876384
-singleElementStringAppend       67.5 ns         67.4 ns      9566632
-multiElementInja               10743 ns        10730 ns        57228
-multiElementWebxx               1086 ns         1085 ns       586441
-multiElementSprintf              185 ns          185 ns      3657129
-multiElementStringAppend         331 ns          331 ns      1979879
-loop1kInja                   1198717 ns      1197285 ns          527
-loop1kWebxx                  1144286 ns      1142437 ns          531
-loop1kStringAppend             87491 ns        87340 ns         7123
+singleElementInja               9199 ns         9176 ns        73954
+singleElementWebxx               385 ns          383 ns      1817979
+singleElementSprintf             148 ns          147 ns      4709397
+singleElementStringAppend       70.7 ns         70.4 ns      9795005
+multiElementInja               11623 ns        11586 ns        59034
+multiElementWebxx               1153 ns         1149 ns       585867
+multiElementSprintf              199 ns          199 ns      3442070
+multiElementStringAppend         360 ns          359 ns      1912412
+loop1kInja                   1217383 ns      1215213 ns          536
+loop1kWebxx                  1152103 ns      1150649 ns          547
+loop1kStringAppend             92980 ns        92784 ns         7253
 ```
 
 ## 🛠 Development
@@ -450,8 +465,8 @@ Contributions are super welcome, in the form of pull requests from Github forks.
 ### Roadmap / To-do
 
 - Now
+    - Optimisations to avoid heap allocations where sizes may be known.
     - Add Mac & Windows builds.
-    - Avoid repeated hashing of component names when using hashed names.
     - More benchmarking/testing (memory, libmxl2, more usage variations).
 - Later
     - WASM usage (with two-way DOM binding).

@@ -181,7 +181,7 @@ BENCHMARK(loop1kInja);
 
 std::string render1kElementWebxx (Input a, Input b, Input c) {
     return render(ol{
-        loop(nItems, [a,b,c] (const auto&, auto&& loop) {
+        loop(nItems, [a,b,c] (const auto&, const Loop& loop) {
             return li{{_class{b}},
                 std::to_string(loop.index),
                 h1{a},

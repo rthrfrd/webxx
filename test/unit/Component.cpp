@@ -20,7 +20,9 @@ TEST_SUITE("Component") {
                     h1{{_class{"title"}}, "Hello"},
                     p{{_class{"summary"}}, "World."},
                 },
-
+                {
+                    link{{_rel{"test"}}},
+                },
             } {}
         };
 
@@ -74,6 +76,33 @@ TEST_SUITE("Component") {
             };
 
             CHECK(renderCss(myPage) == fmt::format(".title[data-c{0}]{{color:green;}}.summary[data-c{0}]{{color:blue;}}", myComId));
+        }
+
+        SUBCASE("Component head elements are collected and rendered") {
+            html myPage {
+                head {
+                    headTarget{},
+                },
+                body {
+                    MyCom{},
+                    MyCom{},
+                },
+            };
+
+            CHECK(render(myPage) == fmt::format(
+            "<html>"
+                    "<head>"
+                        // Collected elements only appears once:
+                        "<link rel=\"test\" data-c{0}/>"
+                    "</head>"
+                    "<body>"
+                        // HTML appears twice:
+                        "<div data-c{0}><h1 class=\"title\" data-c{0}>Hello</h1><p class=\"summary\" data-c{0}>World.</p></div>"
+                        "<div data-c{0}><h1 class=\"title\" data-c{0}>Hello</h1><p class=\"summary\" data-c{0}>World.</p></div>"
+                    "</body>"
+                "</html>",
+                myComId
+            ));
         }
     }
 

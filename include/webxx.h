@@ -982,13 +982,13 @@ namespace Webxx { namespace internal {
                 if (!node.data.attributes.empty()) {
                     render(node.data.attributes, nextComponent);
                 }
-                if (node.data.options.selfClosing) {
-                    sendToRender("/");
-                }
                 if (nextComponent) {
                     sendToRender(" ");
                     sendToRender(componentScopePrefix);
                     sendToRender(componentName(nextComponent));
+                }
+                if (node.data.options.selfClosing) {
+                    sendToRender("/");
                 }
                 sendToRender(">");
             }

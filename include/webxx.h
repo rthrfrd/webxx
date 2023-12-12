@@ -29,6 +29,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <typeinfo>
@@ -122,61 +123,63 @@ namespace Webxx { namespace internal {
             PLACEHOLDER = 1,
         };
 
-        struct Data {
-            std::string own;
-            std::string_view view;
-            Type type;
+        Type type;
+        mutable std::optional<std::string> data;
+        std::string_view view;
 
-            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data)
-
-            Data (
-                const std::string& tOwn = none,
-                std::string_view tView = none,
-                Type tType = Type::LITERAL
-            ) :
-                own{tOwn},
-                view{tView},
-                type{tType}
-            {}
-        };
-
-        mutable Data data;
-
-        Text (Text&&) = default;            // move construct
-        Text& operator= (Text&&) = default; // move assign
-        Text (const Text& other) : data{    // copy construct
-            std::move(other.data)
-        } {}
-        Text& operator= (Text& other) {     // copy assign
+        Text (Text&& other) :               // move construct
+            type{other.type},
+            data{std::move(other.data)},
+            view{data ? *data : other.view}
+        {}
+        Text& operator= (Text&& other) {    // move assign
+            this->type = other.type;
             this->data = std::move(other.data);
+            this->view = this->data ? *(this->data) : other.view;
+            return *this;
+        }
+        Text (const Text& other) :          // copy construct
+            type{other.type},
+            data{std::move(other.data)},
+            view{data ? *data : other.view}
+        {}
+        Text& operator= (Text& other) {     // copy assign
+            this->type = other.type;
+            this->data = std::move(other.data);
+            this->view = this->data ? *(this->data) : other.view;
             return *this;
         }
 
-        Text () : data {
-        } {}
-        Text (std::string&& value) : data {
-            std::move(value) // own
-        } {}
-        Text (const char* const value) : data {
-            {},
-            value, // view
-        } {}
-        Text (const std::string& value) : data {
-            value // own
-        } {}
-        Text (const std::string_view value) : data {
-            {},
-            std::move(value) // view
-        } {}
-        Text (Placeholder&& tPlaceholder) : data {
-            std::move(tPlaceholder), // own
-            {},
-            Text::Type::PLACEHOLDER
-        } {}
-
-        inline std::string_view getView () const {
-            return this->data.view.empty() ? std::string_view(this->data.own) : this->data.view;
-        }
+        constexpr Text () : // empty
+            type{Type::LITERAL},
+            data{},
+            view{none}
+        {}
+        Text (std::string&& value) : // own
+            type{Type::LITERAL},
+            data{std::move(value)},
+            view{*data}
+        {}
+        constexpr Text (const char* const value) : // view
+            type{Type::LITERAL},
+            data{},
+            view{value}
+        {}
+        Text (const std::string& value) : // own
+            type{Type::LITERAL},
+            data{value},
+            view{*data}
+        {}
+        Text (const std::string_view value) : // view
+            type{Type::LITERAL},
+            data{},
+            view{value}
+        {}
+        Text (Placeholder&& tPlaceholder) : // own
+            type{Type::PLACEHOLDER},
+            data{std::move(tPlaceholder)},
+            view{*data}
+        {}
     };
 }}
 
@@ -397,12 +400,12 @@ namespace Webxx { namespace internal {
 
         mutable Data data;
 
-        HtmlAttribute (HtmlAttribute&&) = default;            // move construct
-        HtmlAttribute& operator= (HtmlAttribute&&) = default; // move assign
-        HtmlAttribute (const HtmlAttribute& other) : data {   // copy construct
-            std::move(other.data)
-        } {}
-        HtmlAttribute& operator= (HtmlAttribute& other) {     // copy assign
+        HtmlAttribute (HtmlAttribute&&) = default;              // move construct
+        HtmlAttribute& operator= (HtmlAttribute&&) = default;   // move assign
+        HtmlAttribute (const HtmlAttribute& other) :            // copy construct
+            data {std::move(other.data)}
+        {}
+        HtmlAttribute& operator= (HtmlAttribute& other) {       // copy assign
             this->data = std::move(other.data);
             return *this;
         }
@@ -910,12 +913,12 @@ namespace Webxx { namespace internal {
                         sendToRender(" ");
                     }
 
-                    switch (value.data.type) {
+                    switch (value.type) {
                         case Text::Type::LITERAL:
-                            sendToRender(value.getView());
+                            sendToRender(value.view);
                             break;
                         case Text::Type::PLACEHOLDER:
-                            sendToRender(options.placeholderPopulator(value.getView(), attribute.data.name));
+                            sendToRender(options.placeholderPopulator(value.view, attribute.data.name));
                             break;
                     }
 
@@ -972,9 +975,9 @@ namespace Webxx { namespace internal {
             }
 
             if (node.data.options.gathersCollection == PLACEHOLDER) {
-                sendToRender(options.placeholderPopulator(node.data.content.getView(), node.data.options.tagName));
+                sendToRender(options.placeholderPopulator(node.data.content.view, node.data.options.tagName));
             } else {
-                sendToRender(node.data.content.getView());
+                sendToRender(node.data.content.view);
             }
 
             if (!node.data.children.empty()) {
@@ -1019,7 +1022,7 @@ namespace Webxx { namespace internal {
                     sendToRender(",");
                 }
 
-                sendToRender(selector.getView());
+                sendToRender(selector.view);
 
                 if (currentComponent) {
                     sendToRender("[");
@@ -1038,7 +1041,7 @@ namespace Webxx { namespace internal {
                     sendToRender(",");
                 }
 
-                sendToRender(selector.getView());
+                sendToRender(selector.view);
 
                 if (currentComponent) {
                     sendToRender("[");
@@ -1058,9 +1061,9 @@ namespace Webxx { namespace internal {
                     sendToRender(" ");
                     render(rule.data.selectors, 0);
                 }
-                if (!rule.data.value.getView().empty()) {
+                if (!rule.data.value.view.empty()) {
                     sendToRender(":");
-                    sendToRender(rule.data.value.getView());
+                    sendToRender(rule.data.value.view);
                 }
                 sendToRender(";");
             } else {

@@ -426,17 +426,17 @@ Running build/test/benchmark/webxx_benchmark
 --------------------------------------------------------------------
 Benchmark                          Time             CPU   Iterations
 --------------------------------------------------------------------
-singleElementInja               7689 ns         7577 ns        90478
-singleElementWebxx               242 ns          242 ns      2601534
-singleElementSprintf            77.0 ns         76.9 ns      8749016
-singleElementStringAppend       27.8 ns         27.7 ns     25045977
-multiElementInja                9819 ns         9800 ns        65152
-multiElementWebxx               1077 ns         1071 ns       626847
-multiElementSprintf              191 ns          189 ns      3580471
-multiElementStringAppend         223 ns          222 ns      2990494
-loop1kInja                   1586433 ns      1583000 ns          417
-loop1kWebxx                   954590 ns       952975 ns          667
-loop1kStringAppend            112652 ns       112369 ns         5784
+singleElementInja               6442 ns         6438 ns        85931
+singleElementWebxx               228 ns          227 ns      2939620
+singleElementSprintf            70.3 ns         70.2 ns      9009705
+singleElementStringAppend       26.8 ns         26.8 ns     25017959
+multiElementInja                9208 ns         9206 ns        65686
+multiElementWebxx                990 ns          990 ns       640756
+multiElementSprintf              177 ns          176 ns      3711972
+multiElementStringAppend         224 ns          224 ns      2844603
+loop1kInja                   1456063 ns      1454982 ns          455
+loop1kWebxx                   871208 ns       870924 ns          656
+loop1kStringAppend            108399 ns       108362 ns         5607
 
 # gcc-13 on macOS Ventura:
 Running build/test/benchmark/webxx_benchmark

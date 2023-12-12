@@ -24,7 +24,7 @@ TEST_SUITE("Attribute") {
         _class attribute{"big"};
 
         CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values[0].getView() == "big");
+        CHECK(attribute.data.values[0].view == "big");
 
         SUBCASE("String literal attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -37,7 +37,7 @@ TEST_SUITE("Attribute") {
         _class attribute{value};
 
         CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values[0].getView() == value);
+        CHECK(attribute.data.values[0].view == value);
 
         SUBCASE("Const char attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -50,7 +50,7 @@ TEST_SUITE("Attribute") {
         _class attribute{value};
 
         CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values[0].getView() == value);
+        CHECK(attribute.data.values[0].view == value);
 
         SUBCASE("std::string attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -63,7 +63,7 @@ TEST_SUITE("Attribute") {
         _class attribute{_{value}};
 
         CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values[0].getView() == value);
+        CHECK(attribute.data.values[0].view == value);
 
         SUBCASE("Placeholder attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -75,8 +75,8 @@ TEST_SUITE("Attribute") {
         _class attribute{"big", "tall"};
 
         CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values[0].getView() == "big");
-        CHECK(attribute.data.values[1].getView() == "tall");
+        CHECK(attribute.data.values[0].view == "big");
+        CHECK(attribute.data.values[1].view == "tall");
 
         SUBCASE("Multiple values attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -88,7 +88,7 @@ TEST_SUITE("Attribute") {
         _dataCustom customAttribute{"something"};
 
         CHECK(std::string(customAttribute.data.name) == "data-custom");
-        CHECK(customAttribute.data.values[0].getView() == "something");
+        CHECK(customAttribute.data.values[0].view == "something");
 
         SUBCASE("Custom attribute can be rendered") {
             std::string rendered = render(customAttribute);

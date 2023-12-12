@@ -11,7 +11,7 @@ TEST_SUITE("CSS Stylesheet") {
         color property{"red"};
 
         CHECK(std::string(property.data.label) == "color");
-        CHECK(property.data.value.getView() == "red");
+        CHECK(property.data.value.view == "red");
 
         SUBCASE("Property with value can be rendered") {
             CHECK(render(property) == "color:red;");
@@ -22,7 +22,7 @@ TEST_SUITE("CSS Stylesheet") {
         webkitSomething property{"foo"};
 
         CHECK(property.data.label == webkitSomethingName);
-        CHECK(property.data.value.getView() == "foo");
+        CHECK(property.data.value.view == "foo");
 
         SUBCASE("Customer property can be rendered") {
             CHECK(render(property) == "-webkit-something:foo;");

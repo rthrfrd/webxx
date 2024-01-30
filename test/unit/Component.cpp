@@ -27,14 +27,11 @@ TEST_SUITE("Component") {
         };
 
         MyCom myCom{};
-        auto myComId = myCom.data.componentTypeId;
-
-        // CHECK(myCom->css.size() == 2);
+        auto myComId = myCom.id.begin();
 
         SUBCASE("Component can be rendered") {
-            CHECK(render(myCom) == fmt::format("<div data-c{0}><h1 class=\"title\" data-c{0}>Hello</h1><p class=\"summary\" data-c{0}>World.</p></div>", myComId));
+            CHECK(render(myCom) == fmt::format("<div lang=\"x-{0}\"><h1 class=\"title\">Hello</h1><p class=\"summary\">World.</p></div>", myComId));
         }
-
         SUBCASE("Component styles are collected and rendered") {
             html myPage {
                 head {
@@ -50,12 +47,12 @@ TEST_SUITE("Component") {
             "<html>"
                     "<head>"
                         // Collected style only appears once:
-                        "<style>.title[data-c{0}]{{color:green;}}.summary[data-c{0}]{{color:blue;}}</style>"
+                        "<style>.title:lang(x-{0}){{color:green;}}.summary:lang(x-{0}){{color:blue;}}</style>"
                     "</head>"
                     "<body>"
                         // HTML appears twice:
-                        "<div data-c{0}><h1 class=\"title\" data-c{0}>Hello</h1><p class=\"summary\" data-c{0}>World.</p></div>"
-                        "<div data-c{0}><h1 class=\"title\" data-c{0}>Hello</h1><p class=\"summary\" data-c{0}>World.</p></div>"
+                        "<div lang=\"x-{0}\"><h1 class=\"title\">Hello</h1><p class=\"summary\">World.</p></div>"
+                        "<div lang=\"x-{0}\"><h1 class=\"title\">Hello</h1><p class=\"summary\">World.</p></div>"
                     "</body>"
                 "</html>",
                 myComId
@@ -75,7 +72,7 @@ TEST_SUITE("Component") {
                 },
             };
 
-            CHECK(renderCss(myPage) == fmt::format(".title[data-c{0}]{{color:green;}}.summary[data-c{0}]{{color:blue;}}", myComId));
+            CHECK(renderCss(myPage) == fmt::format(".title:lang(x-{0}){{color:green;}}.summary:lang(x-{0}){{color:blue;}}", myComId));
         }
 
         SUBCASE("Component head elements are collected and rendered") {
@@ -93,12 +90,12 @@ TEST_SUITE("Component") {
             "<html>"
                     "<head>"
                         // Collected elements only appears once:
-                        "<link rel=\"test\" data-c{0}/>"
+                        "<link rel=\"test\"/>"
                     "</head>"
                     "<body>"
                         // HTML appears twice:
-                        "<div data-c{0}><h1 class=\"title\" data-c{0}>Hello</h1><p class=\"summary\" data-c{0}>World.</p></div>"
-                        "<div data-c{0}><h1 class=\"title\" data-c{0}>Hello</h1><p class=\"summary\" data-c{0}>World.</p></div>"
+                        "<div lang=\"x-{0}\"><h1 class=\"title\">Hello</h1><p class=\"summary\">World.</p></div>"
+                        "<div lang=\"x-{0}\"><h1 class=\"title\">Hello</h1><p class=\"summary\">World.</p></div>"
                     "</body>"
                 "</html>",
                 myComId
@@ -153,22 +150,22 @@ TEST_SUITE("Component") {
                     "<style>"
         };
         // Collected styles from all components, with each only appearing once:
-        std::string cssComA{fmt::format(".a[data-c{0}]{{color:green;}}", comA.data.componentTypeId)};
-        std::string cssComB{fmt::format(".b[data-c{0}]{{color:blue;}}", comB.data.componentTypeId)};
+        std::string cssComA{fmt::format(".a:lang(x-{0}){{color:green;}}", comA.id.begin())};
+        std::string cssComB{fmt::format(".b:lang(x-{0}){{color:blue;}}", comB.id.begin())};
         std::string htmlEnd{fmt::format(
                 "</style>"
                 "</head>"
                 "<body>"
-                    "<div class=\"b\" data-c{1}>"
-                        "<div class=\"a\" data-c{0}>"
+                    "<div c{1} class=\"b\">"
+                        "<div c{0} class=\"a\">"
                             "Hello A"
                         "</div>"
                         "Hello B"
                     "</div>"
                 "</body>"
             "</html>",
-            comA.data.componentTypeId,
-            comB.data.componentTypeId
+            comA.id.begin(),
+            comB.id.begin()
         )};
 
         CHECK(html.find(htmlStart) == 0);

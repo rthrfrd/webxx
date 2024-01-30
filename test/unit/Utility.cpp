@@ -13,8 +13,8 @@ TEST_SUITE("Utility") {
     };
     std::vector<Post> noPosts{};
 
-    li postItem (const Post &post) {
-        return {post.title};
+    auto postItem (const Post &post) {
+        return li{post.title};
     }
 
     struct PostEl : component<PostEl> {
@@ -123,11 +123,11 @@ TEST_SUITE("Utility") {
 
         CHECK(render(myList) == fmt::format(
             "<ol>"
-                "<li data-c{0}>10 ways to leak memory</li>"
-                "<li data-c{0}>1 simple trick</li>"
-                "<li data-c{0}>Is C++ dead? 💀</li>"
+                "<li lang=\"x-{0}\">10 ways to leak memory</li>"
+                "<li lang=\"x-{0}\">1 simple trick</li>"
+                "<li lang=\"x-{0}\">Is C++ dead? 💀</li>"
             "</ol>",
-            (PostEl({})).data.componentTypeId
+            (PostEl({})).id.begin()
         ));
     }
 

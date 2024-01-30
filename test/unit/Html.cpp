@@ -5,14 +5,10 @@
 TEST_SUITE("Attribute") {
     using namespace Webxx;
 
-    constexpr static char customDataAttr[] = "data-custom";
-    using _dataCustom = attr<customDataAttr>;
+    WEBXX_HTML_ATTR_ALIAS(data-custom, dataCustom);
 
     TEST_CASE("Attribute can be created empty") {
         _class attribute{};
-
-        CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values.empty());
 
         SUBCASE("Empty attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -21,10 +17,7 @@ TEST_SUITE("Attribute") {
     }
 
     TEST_CASE("Attribute can be created with string literal") {
-        _class attribute{"big"};
-
-        CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values[0].view == "big");
+        _class attribute("big");
 
         SUBCASE("String literal attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -36,9 +29,6 @@ TEST_SUITE("Attribute") {
         const char value[] = "big";
         _class attribute{value};
 
-        CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values[0].view == value);
-
         SUBCASE("Const char attribute can be rendered") {
             std::string rendered = render(attribute);
             CHECK(rendered == "class=\"big\"");
@@ -48,9 +38,6 @@ TEST_SUITE("Attribute") {
     TEST_CASE("Attribute can be created with std::string") {
         std::string value{"big"};
         _class attribute{value};
-
-        CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values[0].view == value);
 
         SUBCASE("std::string attribute can be rendered") {
             std::string rendered = render(attribute);
@@ -62,9 +49,6 @@ TEST_SUITE("Attribute") {
         const std::string_view value{"replacable"};
         _class attribute{_{value}};
 
-        CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values[0].view == value);
-
         SUBCASE("Placeholder attribute can be rendered") {
             std::string rendered = render(attribute);
             CHECK(rendered == "class=\"replacable\"");
@@ -74,10 +58,6 @@ TEST_SUITE("Attribute") {
     TEST_CASE("Attribute can be created with multiple values") {
         _class attribute{"big", "tall"};
 
-        CHECK(std::string(attribute.data.name) == "class");
-        CHECK(attribute.data.values[0].view == "big");
-        CHECK(attribute.data.values[1].view == "tall");
-
         SUBCASE("Multiple values attribute can be rendered") {
             std::string rendered = render(attribute);
             CHECK(rendered == "class=\"big tall\"");
@@ -86,9 +66,6 @@ TEST_SUITE("Attribute") {
 
     TEST_CASE("Custom attribute can be defined") {
         _dataCustom customAttribute{"something"};
-
-        CHECK(std::string(customAttribute.data.name) == "data-custom");
-        CHECK(customAttribute.data.values[0].view == "something");
 
         SUBCASE("Custom attribute can be rendered") {
             std::string rendered = render(customAttribute);
@@ -100,13 +77,10 @@ TEST_SUITE("Attribute") {
 TEST_SUITE("Attributes") {
     using namespace Webxx;
 
-    static constexpr char customDataAttr[] = "data-custom";
-    using _dataCustom = attr<customDataAttr>;
+    WEBXX_HTML_ATTR_ALIAS(data-custom, dataCustom);
 
     TEST_CASE("Attributes can be empty") {
         attrs attributes{};
-
-        CHECK(attributes.size() == 0);
 
         SUBCASE("Empty attributes can be rendered") {
             std::string rendered = render(attributes);
@@ -115,20 +89,18 @@ TEST_SUITE("Attributes") {
     }
 
     TEST_CASE("Attributes can be populated via initializer list") {
-        std::initializer_list<internal::HtmlAttribute> attributesL{
+        attrs attributesL{
             _class{"big small"},
             _id{"thing"},
             _disabled{},
-            _dataCustom{"hello"}
+            _dataCustom{"hello"},
         };
 
         attrs attributes(std::move(attributesL));
 
-        CHECK(attributes.size() == 4);
-
         SUBCASE("Initializer populated attributes can be rendered") {
             std::string rendered = render(attributes);
-            CHECK(rendered == " class=\"big small\" id=\"thing\" disabled data-custom=\"hello\"");
+            CHECK(rendered == "class=\"big small\" id=\"thing\" disabled data-custom=\"hello\"");
         }
 
         SUBCASE("Initializer populated attributes can be rendered inside element") {
@@ -138,18 +110,16 @@ TEST_SUITE("Attributes") {
     }
 
     TEST_CASE("Attributes can be dynamically populated") {
-        std::vector<internal::HtmlAttribute> attributes{};
+        attrs attributes{};
 
         attributes.push_back(_class{"big small"});
         attributes.push_back(_id{"thing"});
         attributes.push_back(_disabled{});
         attributes.push_back(_dataCustom{"hello"});
 
-        CHECK(attributes.size() == 4);
-
         SUBCASE("Dynamically populated attributes can be rendered") {
             std::string rendered = render(attributes);
-            CHECK(rendered == " class=\"big small\" id=\"thing\" disabled data-custom=\"hello\"");
+            CHECK(rendered == "class=\"big small\" id=\"thing\" disabled data-custom=\"hello\"");
         }
 
         SUBCASE("Dynamically populated attributes can be rendered inside element") {
@@ -165,8 +135,6 @@ TEST_SUITE("Node") {
     TEST_CASE("Node can be empty") {
         h1 node;
 
-        CHECK(std::string(node.data.options.tagName) == "h1");
-
         SUBCASE("Empty node can be rendered") {
             CHECK(render(node) == "<h1></h1>");
         }
@@ -174,6 +142,14 @@ TEST_SUITE("Node") {
 
     TEST_CASE("Node can have attributes") {
         h1 node{{_class{"title"}, _id{"theTitle"}}};
+
+        SUBCASE("Node with attributes can be rendered") {
+            CHECK(render(node) == "<h1 class=\"title\" id=\"theTitle\"></h1>");
+        }
+    }
+
+    TEST_CASE("Node can have attributes directly") {
+        h1 node{_class{"title"}, _id{"theTitle"}};
 
         SUBCASE("Node with attributes can be rendered") {
             CHECK(render(node) == "<h1 class=\"title\" id=\"theTitle\"></h1>");
@@ -282,6 +258,14 @@ TEST_SUITE("Node") {
         }
     }
 
+    TEST_CASE("Node can have attributes directly with children and content") {
+        h1 node{_class{"title"}, _id{"theTitle"}, "Hello", a{" world"}, "!"};
+
+        SUBCASE("Node with attributes and mixed children and content can be rendered") {
+            CHECK(render(node) == "<h1 class=\"title\" id=\"theTitle\">Hello<a> world</a>!</h1>");
+        }
+    }
+
     TEST_CASE("Nodes can be arbitrarily nested") {
         title title{"Hey"};
 
@@ -305,9 +289,6 @@ TEST_SUITE("Node") {
     TEST_CASE("Node can be self-closing") {
         img node;
 
-        CHECK(std::string(node.data.options.tagName) == "img");
-        CHECK(node.data.options.selfClosing == true);
-
         SUBCASE("Self-closing node can be rendered") {
             CHECK(render(node) == "<img/>");
         }
@@ -321,11 +302,16 @@ TEST_SUITE("Node") {
         }
     }
 
+    TEST_CASE("Self-closing node can have attributes directly") {
+        img node{_class{"logo"}, _href{"/logo.gif"}};
+
+        SUBCASE("Self-closing node with attributes can be rendered") {
+            CHECK(render(node) == "<img class=\"logo\" href=\"/logo.gif\"/>");
+        }
+    }
+
     TEST_CASE("Node can have prefix") {
         doc node;
-
-        CHECK(std::string(node.data.options.tagName) == "");
-        CHECK(std::string(node.data.options.prefix) == "<!doctype html>");
 
         SUBCASE("Prefixed node can be rendered") {
             CHECK(render(node) == "<!doctype html>");

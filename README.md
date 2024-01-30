@@ -426,17 +426,17 @@ Running build/test/benchmark/webxx_benchmark
 --------------------------------------------------------------------
 Benchmark                          Time             CPU   Iterations
 --------------------------------------------------------------------
-singleElementInja               6442 ns         6438 ns        85931
-singleElementWebxx               228 ns          227 ns      2939620
-singleElementSprintf            70.3 ns         70.2 ns      9009705
-singleElementStringAppend       26.8 ns         26.8 ns     25017959
-multiElementInja                9208 ns         9206 ns        65686
-multiElementWebxx                990 ns          990 ns       640756
-multiElementSprintf              177 ns          176 ns      3711972
-multiElementStringAppend         224 ns          224 ns      2844603
-loop1kInja                   1456063 ns      1454982 ns          455
-loop1kWebxx                   871208 ns       870924 ns          656
-loop1kStringAppend            108399 ns       108362 ns         5607
+singleElementInja               6218 ns         6213 ns        96863
+singleElementWebxx               147 ns          147 ns      4570682
+singleElementSprintf            72.0 ns         71.9 ns      9102612
+singleElementStringAppend       25.9 ns         25.9 ns     26220567
+multiElementInja                9384 ns         9379 ns        69070
+multiElementWebxx                430 ns          430 ns      1646702
+multiElementSprintf              176 ns          176 ns      3792640
+multiElementStringAppend         203 ns          203 ns      3229825
+loop1kInja                   1410894 ns      1410387 ns          468
+loop1kWebxx                   690407 ns       689945 ns          861
+loop1kStringAppend            110683 ns       110615 ns         5883
 
 # gcc-13 on macOS Ventura:
 Running build/test/benchmark/webxx_benchmark
@@ -489,3 +489,10 @@ The library is sectioned into several modules:
 - __Rendering:__ Functions for rendering constructed Components, HTML & CSS into strings.
 - __Utility:__ Helper functions for dynamically generating content.
 - __Public:__ The interface users of this library can consume.
+
+### Useful commands
+
+```sh
+# Open in Xcode:
+cmake -G Xcode -B build-xcode
+```

@@ -30,5 +30,10 @@ target_include_directories(
 )
 target_link_libraries(${BENCHMARK_MAIN} PRIVATE benchmark::benchmark inja webxx)
 
+if (NOT CMAKE_BUILD_TYPE MATCHES Debug)
+    target_compile_options(${BENCHMARK_MAIN} PUBLIC -O3 -flto)
+    target_link_options(${BENCHMARK_MAIN} PUBLIC -O3 -flto)
+endif()
+
 # Add it to our test runner:
 add_test(NAME Benchmark COMMAND ${BENCHMARK_MAIN} --benchmark_format=json)

@@ -25,57 +25,514 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstring>
+#include <deque>
 #include <functional>
+#include <initializer_list>
+#include <iterator>
 #include <memory>
-#include <optional>
+#include <type_traits>
+#include <utility>
 #include <string>
 #include <string_view>
-#include <typeinfo>
 #include <unordered_set>
 #include <vector>
 
-#define WEBXX_CSS_PROP(NAME)\
-    namespace internal { namespace res { constexpr char NAME ## P[] = #NAME; }}\
-    using NAME = internal::CssProperty<internal::res::NAME ## P>
-#define WEBXX_CSS_PROP_ALIAS(NAME,ALIAS)\
-    namespace internal { namespace res { constexpr char ALIAS ## P[] = #NAME; }}\
-    using ALIAS = internal::CssProperty<internal::res::ALIAS ## P>
-#define WEBXX_CSS_AT_SINGLE(NAME,ALIAS)\
-    namespace internal { namespace res { constexpr char ALIAS ## CA[] = #NAME; }}\
-    using ALIAS = internal::CssAtSingle<internal::res::ALIAS ## CA>
-#define WEBXX_CSS_AT_NESTED(NAME,ALIAS)\
-    namespace internal { namespace res { constexpr char ALIAS ## CA[] = #NAME; }}\
-    using ALIAS = internal::CssAtNested<internal::res::ALIAS ## CA>
-#define WEBXX_HTML_EL(TAG)\
-    namespace internal { namespace res { constexpr char TAG ## T[] = #TAG; }}\
-    using TAG = internal::HtmlNodeDefined<internal::res::TAG ## T>
-#define WEBXX_HTML_EL_ALIAS(TAG,ALIAS)\
-    namespace internal { namespace res { constexpr char ALIAS ## T[] = #TAG; }}\
-    using ALIAS = internal::HtmlNodeDefined<internal::res::ALIAS ## T>
-#define WEBXX_HTML_EL_SELF_CLOSING(TAG)\
-    namespace internal { namespace res { constexpr char TAG ## T[] = #TAG; }}\
-    using TAG = internal::HtmlNodeDefined<internal::res::TAG ## T,internal::none,true>
-#define WEBXX_HTML_ATTR(NAME)\
-    namespace internal { namespace res { constexpr char NAME ## A[] = #NAME; }}\
-    using _ ## NAME = internal::HtmlAttributeDefined<internal::res::NAME ## A>
-#define WEBXX_HTML_ATTR_ALIAS(NAME,ALIAS)\
-    namespace internal { namespace res { constexpr char ALIAS ## A[] = #NAME; }}\
-    using _ ## ALIAS = internal::HtmlAttributeDefined<internal::res::ALIAS ## A>
-#define WEBXX_MOVE_ONLY_CONSTRUCTORS(CLASS)\
-    CLASS (CLASS &&) = default;\
-    CLASS & operator= (CLASS &&) = default;\
-    CLASS (const CLASS &) = delete;\
-    CLASS & operator= (const CLASS &) = delete;
-#ifdef _MSC_VER
-#define WEBXX_FN_SIG __FUNCSIG__
-#else
-#define WEBXX_FN_SIG __PRETTY_FUNCTION__
-#endif
+
+////|        |////
+////| Common |////
+////|        |////
+
 
 namespace Webxx { namespace internal {
     static constexpr const char none[] = "";
+    static constexpr const char styleTag[] = "style";
+
+    struct Empty {};
+
+    // std::array helpers:
+
+    template<typename, typename = void>
+    struct has_size : std::false_type {};
+    template<typename T>
+    struct has_size<T, std::void_t<typename T::size>> : std::true_type {};
+    template<typename T>
+    constexpr bool has_size_v = has_size<std::remove_cv_t<std::remove_reference_t<T>>>::value;
+
+    template<typename T>
+    constexpr typename std::enable_if_t<!std::is_array_v<T>&&has_size_v<T>, size_t> linkCountOfType () {
+        return T::size::value;
+    }
+    template<typename T>
+    constexpr typename std::enable_if_t<!std::is_array_v<T>&&!has_size_v<T>, size_t> linkCountOfType () {
+        return 1;
+    }
+    template<typename T>
+    constexpr typename std::enable_if_t<std::is_array_v<T>&&has_size_v<std::remove_extent_t<T>>, size_t> linkCountOfType () {
+        return std::extent_v<T>*linkCountOfType<std::remove_extent_t<T>>();
+    }
+    template<typename T>
+    constexpr typename std::enable_if_t<std::is_array_v<T>&&!has_size_v<std::remove_extent_t<T>>, size_t> linkCountOfType () {
+        return 1;
+    }
+
+    template<typename ...Ts>
+    constexpr size_t linkCountOfTypes () {
+        return (linkCountOfType< std::remove_cv_t<std::remove_reference_t<Ts>>>() + ... + 0);
+    }
+
+    template <typename ...Ts>
+    constexpr size_t linkCount = linkCountOfTypes<Ts...>();
+}}
+
+
+////|      |////
+////| Tape |////
+////|      |////
+
+
+namespace Webxx { namespace internal {
+
+    // Link:
+
+    struct Link {
+        typedef std::integral_constant<std::size_t, 1> size;
+        typedef std::function<std::array<Link,1>()> GeneratorFn;
+
+        struct Flag {
+            static constexpr const uint8_t passComCss   = 0b10000000;
+            static constexpr const uint8_t passComHead  = 0b01000000;
+            static constexpr const uint8_t placeholder  = 0b00100000;
+            static constexpr const uint8_t insideTag    = 0b00010000;
+            static constexpr const uint8_t invisible    = 0b00001000;
+
+            static constexpr const uint8_t maskPass     = 0b11000000;
+        };
+
+        enum class Type : uint8_t {
+            NONE = 0,
+            BRANCH_COM_CSS,
+            BRANCH_COM_HEAD,
+            BRANCH_DYNAMIC,
+            COM_END,
+            COM_START,
+            CSS_AT_RULE_START,
+            CSS_AT_RULE_SELECTOR,
+            CSS_AT_RULE_VALUE,
+            CSS_BLOCK_START,
+            CSS_BLOCK_END,
+            CSS_DECLARATION_PROPERTY,
+            CSS_DECLARATION_VALUE,
+            CSS_RULE_START,
+            CSS_SELECTOR,
+            HTML_ATTR_END,
+            HTML_ATTR_KEY,
+            HTML_ATTR_VALUE,
+            HTML_TAG_END,
+            HTML_TAG_START,
+            HTML_TAG_START_SELF_CLOSE,
+            BRANCH_LAZY,
+            TEXT,
+        };
+
+        struct View {
+            const char* ptr{none};
+            size_t len{0};
+            constexpr operator std::string_view() const {
+                return {this->ptr, this->len};
+            }
+        };
+
+        Type type;
+        uint8_t flags;
+        uint32_t spare;
+        mutable std::string* own;
+        View view;
+        mutable std::vector<Link>* dynamic;
+        mutable GeneratorFn* generator;
+
+        constexpr Link () noexcept :
+            type{Type::NONE},
+            flags{Flag::insideTag | Flag::invisible},
+            spare{0},
+            own{nullptr},
+            view{},
+            dynamic{nullptr},
+            generator{nullptr}
+        {}
+
+        constexpr Link (Link&& other) noexcept : // move construct
+            type{other.type},
+            flags{other.flags},
+            spare{other.spare},
+            own{other.own},
+            view{own ? View{own->data(), other.view.len} : std::move(other.view)},
+            dynamic{other.dynamic},
+            generator{other.generator}
+        {
+            other.own = nullptr;
+            other.dynamic = nullptr;
+            other.generator = nullptr;
+        }
+        constexpr Link& operator= (Link&& other) noexcept { // move assign
+            this->type = other.type;
+            this->flags = other.flags;
+            this->own = other.own;
+            this->spare = other.spare;
+            other.own = nullptr;
+            this->view = own ? View{own->data(), other.view.len} : std::move(other.view),
+            this->dynamic = other.dynamic;
+            other.dynamic = nullptr;
+            this->generator = other.generator;
+            other.generator = nullptr;
+            return *this;
+        }
+
+        // Links are never copied, however copy constructors are implemented as
+        // quasi-move constructors to allow them to be "moved" out of initializer_lists:
+        constexpr Link (const Link& other) noexcept :
+            type{other.type},
+            flags{other.flags},
+            spare{other.spare},
+            own{other.own},
+            view{own ? View{own->data(), other.view.len} : std::move(other.view)},
+            dynamic{other.dynamic},
+            generator{other.generator}
+        {
+            other.own = nullptr;
+            other.dynamic = nullptr;
+            other.generator = nullptr;
+        }
+        constexpr Link& operator= (const Link& other) noexcept {
+            this->type = other.type;
+            this->flags = other.flags;
+            this->spare = other.spare;
+            this->own = other.own;
+            other.own = nullptr;
+            this->view = own ? View{own->data(), other.view.len} : std::move(other.view),
+            this->dynamic = other.dynamic;
+            other.dynamic = nullptr;
+            this->generator = std::move(other.generator);
+            other.generator = nullptr;
+            return *this;
+        }
+
+        constexpr Link (const Type tType, uint8_t tFlags = 0) noexcept :
+            type{tType},
+            flags{tFlags},
+            spare{0},
+            own{nullptr},
+            view{},
+            dynamic{nullptr},
+            generator{nullptr}
+        {}
+        constexpr Link (const char* const& text, Type tType = Type::TEXT, uint8_t tFlags = 0) noexcept :
+            type{tType},
+            flags{tFlags},
+            spare{0},
+            own{nullptr},
+            view{text, std::char_traits<char>::length(text)},
+            dynamic{nullptr},
+            generator{nullptr}
+        {}
+        constexpr Link (const std::string_view text, Type tType = Type::TEXT, uint8_t tFlags = 0) noexcept :
+            type{tType},
+            flags{tFlags},
+            spare{0},
+            own{nullptr},
+            view{text.data(), text.size()},
+            dynamic{nullptr},
+            generator{nullptr}
+        {}
+        Link (const std::string text, Type tType = Type::TEXT, uint8_t tFlags = 0) noexcept :
+            type{tType},
+            flags{tFlags},
+            spare{0},
+            own{new std::string(std::move(text))},
+            view{own->data(), own->size()},
+            dynamic{nullptr},
+            generator{nullptr}
+        {}
+
+        explicit Link (std::vector<Link>&& links) noexcept :
+            type{Type::BRANCH_DYNAMIC},
+            flags{Flag::insideTag | Flag::invisible},
+            spare{0},
+            own{nullptr},
+            view{},
+            dynamic{new std::vector<Link>(std::move(links))},
+            generator{nullptr}
+        {}
+        template<size_t N>
+        explicit Link (std::array<Link,N>&& links) noexcept :
+            type{Type::BRANCH_DYNAMIC},
+            flags{Flag::insideTag | Flag::invisible},
+            spare{0},
+            own{nullptr},
+            view{},
+            dynamic{new std::vector<Link>(
+                std::make_move_iterator(std::begin(links)),
+                std::make_move_iterator(std::end(links))
+            )},
+            generator{nullptr}
+        {}
+        template<typename T>
+        explicit Link (std::function<T()>&& generator) noexcept :
+            type{Type::BRANCH_LAZY},
+            flags{Flag::insideTag | Flag::invisible},
+            spare{0},
+            own{nullptr},
+            view{},
+            dynamic{nullptr},
+            generator{new GeneratorFn(std::move(generator))}
+        {}
+
+        constexpr inline Link&& setFlags (uint8_t tFlags) noexcept {
+            this->flags |= tFlags;
+            return std::move(*this);
+        }
+
+        constexpr inline Link&& setSpare (uint32_t tSpare) noexcept {
+            this->spare = tSpare;
+            return std::move(*this);
+        }
+
+        constexpr inline Link&& setType (Type tType) noexcept {
+            this->type = tType;
+            return std::move(*this);
+        }
+
+        inline ~Link () noexcept {
+            delete this->own;
+            delete this->dynamic;
+            delete this->generator;
+        }
+    };
+
+    template<typename T>
+    void setFlagsRecursive (T& tape, uint8_t flags) {
+        for (Link& link : tape) {
+            link.flags |= flags;
+            if (link.dynamic) {
+                setFlagsRecursive(*(link.dynamic), flags);
+            }
+        }
+    }
+
+    // Tape:
+
+    template<size_t N>
+    struct Tape : public std::array<Link,N> {
+        typedef std::integral_constant<std::size_t, N> size;
+
+        constexpr inline Tape&& setFlags (uint8_t tFlags) noexcept {
+            setFlagsRecursive(*this, tFlags);
+            return std::move(*this);
+        }
+
+        constexpr inline Tape&& setType (Link::Type type) noexcept {
+            for (Link& link : *this) {
+                link.type = type;
+            }
+            return std::move(*this);
+        }
+    };
+
+    typedef std::vector<Link> FlexiTape;
+
+    template<std::size_t N, std::size_t... I>
+    constexpr Tape<N> fromArrayImpl (Link (&&a)[N], std::index_sequence<I...>) {
+        return {{ std::move(a[I])... }};
+    }
+
+    template<size_t N>
+    constexpr Tape<N> fromArray (Link (&&tLinks)[N]) {
+        return fromArrayImpl(std::move(tLinks), std::make_index_sequence<N>{});
+    }
+
+    template<size_t NT, size_t NS>
+    constexpr void moveOrCopyTo (long& offset, Tape<NT>& target, Tape<NS>&& source) noexcept {
+        std::move(
+            std::make_move_iterator(source.begin()),
+            std::make_move_iterator(source.end()),
+            target.begin() + offset
+        );
+        offset += NS;
+    }
+
+    template<size_t NT, size_t NS>
+    constexpr void moveOrCopyTo (long& offset, Tape<NT>& target, const Tape<NS>& source) noexcept {
+        std::copy(
+            source.begin(),
+            source.end(),
+            target.begin() + offset
+        );
+        offset += NS;
+    }
+
+    template<typename T, size_t NS>
+    constexpr void moveOrCopyTo (long& offset, std::vector<T>& target, Tape<NS>&& source) noexcept {
+        target.insert(
+            target.begin() + offset,
+            std::make_move_iterator(source.begin()),
+            std::make_move_iterator(source.end())
+        );
+        offset += NS;
+    }
+
+    template<typename T, size_t NS>
+    constexpr void moveOrCopyTo (long& offset, std::vector<T>& target, const Tape<NS>& source) noexcept {
+        target.insert(
+            target.begin() + offset,
+            source.begin(),
+            source.end()
+        );
+        offset += NS;
+    }
+
+    constexpr inline Tape<0> flatten () noexcept {
+        return {};
+    }
+
+    inline Tape<1> flatten (const char* text) noexcept {
+        return {Link(text)};
+    }
+
+    inline Tape<1> flatten (const std::string_view text) noexcept {
+        return {Link(text)};
+    }
+
+    inline Tape<1> flatten (const std::string&& text) noexcept {
+        return {Link(std::move(text))};
+    }
+
+    inline Tape<1> flatten (const std::string& text) noexcept {
+        return {Link(text)};
+    }
+
+    template<typename T>
+    inline Tape<1> flatten (std::function<T()>&& lazy) noexcept {
+        return {Link(std::move(lazy))};
+    }
+
+    inline Tape<1> flatten (Link&& link) noexcept {
+        return Tape<1>{std::move(link)};
+    }
+
+    inline Tape<1> flatten (const Link& link) noexcept {
+        return Tape<1>{link};
+    }
+
+    template<size_t N>
+    constexpr Tape<N> flatten (Tape<N>&& tape) noexcept {
+        return std::move(tape);
+    }
+
+    template<size_t N>
+    constexpr const Tape<N>& flatten (const Tape<N>& tape) noexcept {
+        return tape;
+    }
+
+    template<class T>
+    Tape<1> flatten (const std::vector<T>&& tapesOrLinks) noexcept {
+        FlexiTape flattened;
+        flattened.reserve(linkCount<T>*tapesOrLinks.size());
+        long offset = 0;
+        for (T& tapeOrLink : tapesOrLinks) {
+            moveOrCopyTo(offset, flattened, flatten(std::move(tapeOrLink)));
+        }
+        return Tape<1>{Link(std::move(flattened))};
+    }
+
+    template<class T>
+    Tape<1> flatten (const std::initializer_list<T> tapesOrLinks) noexcept {
+        FlexiTape flattened;
+        flattened.reserve(linkCount<T>*tapesOrLinks.size());
+        long offset = 0;
+        for (T tapeOrLink : tapesOrLinks) {
+            moveOrCopyTo(offset, flattened, flatten(std::move(tapeOrLink)));
+        }
+        return Tape<1>{Link(std::move(flattened))};
+    }
+
+    template<typename T, size_t N>
+    constexpr Tape<linkCount<T>*N> flatten (T (&& tapesOrLinks)[N]) noexcept {
+        Tape<linkCount<T>*N> flattened;
+        long offset = 0;
+        for (T& tapeOrLink : tapesOrLinks) {
+            moveOrCopyTo(offset, flattened, flatten(std::move(tapeOrLink)));
+        }
+        return flattened;
+    }
+
+    template<typename T, size_t N>
+    constexpr Tape<linkCount<T>*N> flatten (std::array<T,N>&& tapesOrLinks) noexcept {
+        Tape<linkCount<T>*N> flattened;
+        long offset = 0;
+        for (T& tapeOrLink : tapesOrLinks) {
+            moveOrCopyTo(offset, flattened, flatten(std::move(tapeOrLink)));
+        }
+        return flattened;
+    }
+
+    template<class ...Ts>
+    constexpr Tape<linkCount<Ts...>> flattenMany (Ts&&... tapesOrLinks) noexcept {
+        Tape<linkCount<Ts...>> flattened;
+        long offset = 0;
+        (moveOrCopyTo(offset, flattened, flatten(std::forward<Ts>(tapesOrLinks))), ...);
+        return flattened;
+    }
+
+    struct TapeFragment : public Tape<1> {
+        TapeFragment () :
+            Tape<1>{Link(FlexiTape{})}
+        {}
+        TapeFragment (Link link) :
+            Tape<1>{std::move(link)}
+        {}
+        TapeFragment (FlexiTape tape) :
+            Tape<1>{Link(std::move(tape))}
+        {}
+        template<size_t N>
+        TapeFragment (Tape<N> tape) :
+            Tape<1>{Link(std::move(tape))}
+        {}
+        template<class ...T>
+        TapeFragment (T&&... children) :
+            Tape<1>{Link(flattenMany(std::forward<T>(children)...))}
+        {}
+
+        void push_back (Link&& link) {
+            this->at(0).dynamic->push_back(std::move(link));
+        }
+
+        void push_back (FlexiTape&& tape) {
+            auto& dest = this->at(0).dynamic;
+            dest->insert(
+                dest->end(),
+                std::make_move_iterator(tape.begin()),
+                std::make_move_iterator(tape.end())
+            );
+        }
+
+        template<size_t N>
+        void push_back (Tape<N>&& tape) {
+            auto& dest = this->at(0).dynamic;
+            dest->insert(
+                dest->end(),
+                std::make_move_iterator(tape.begin()),
+                std::make_move_iterator(tape.end())
+            );
+        }
+    };
+
+    namespace exports {
+        using fragment = TapeFragment;
+        using lazy = std::function<fragment()>;
+    }
 }}
 
 
@@ -85,102 +542,16 @@ namespace Webxx { namespace internal {
 
 
 namespace Webxx { namespace internal {
-
-    class Placeholder : public std::string {
-        public:
-        using std::string::string;
+    struct Placeholder : Link {
+        template<class T>
+        constexpr Placeholder(T&& value) noexcept :
+            Link(std::forward<T>(value), Type::TEXT, Link::Flag::placeholder)
+        {}
     };
-
-    using PlaceholderPopulator = std::function<const std::string_view(
-        const std::string_view&,
-        const std::string_view&
-    )>;
-
-    inline const std::string_view noopPopulator (
-        const std::string_view& value,
-        const std::string_view&
-    ) {
-        return value;
-    }
 
     namespace exports {
-        using PlaceholderPopulator = PlaceholderPopulator;
         using _ = Placeholder;
     }
-}}
-
-
-////|      |////
-////| Text |////
-////|      |////
-
-
-namespace Webxx { namespace internal {
-
-    struct Text {
-        enum class Type {
-            LITERAL = 0,
-            PLACEHOLDER = 1,
-        };
-
-        Type type;
-        mutable std::optional<std::string> data;
-        std::string_view view;
-
-        Text (Text&& other) :               // move construct
-            type{other.type},
-            data{std::move(other.data)},
-            view{data ? *data : other.view}
-        {}
-        Text& operator= (Text&& other) {    // move assign
-            this->type = other.type;
-            this->data = std::move(other.data);
-            this->view = this->data ? *(this->data) : other.view;
-            return *this;
-        }
-        Text (const Text& other) :          // copy construct
-            type{other.type},
-            data{std::move(other.data)},
-            view{data ? *data : other.view}
-        {}
-        Text& operator= (Text& other) {     // copy assign
-            this->type = other.type;
-            this->data = std::move(other.data);
-            this->view = this->data ? *(this->data) : other.view;
-            return *this;
-        }
-
-        constexpr Text () : // empty
-            type{Type::LITERAL},
-            data{},
-            view{none}
-        {}
-        Text (std::string&& value) : // own
-            type{Type::LITERAL},
-            data{std::move(value)},
-            view{*data}
-        {}
-        constexpr Text (const char* const value) : // view
-            type{Type::LITERAL},
-            data{},
-            view{value}
-        {}
-        Text (const std::string& value) : // own
-            type{Type::LITERAL},
-            data{value},
-            view{*data}
-        {}
-        Text (const std::string_view value) : // view
-            type{Type::LITERAL},
-            data{},
-            view{value}
-        {}
-        Text (Placeholder&& tPlaceholder) : // own
-            type{Type::PLACEHOLDER},
-            data{std::move(tPlaceholder)},
-            view{*data}
-        {}
-    };
 }}
 
 
@@ -190,183 +561,94 @@ namespace Webxx { namespace internal {
 
 
 namespace Webxx { namespace internal {
-    struct CssRule {
-        struct Data {
-            bool canNest;
-            const char* label;
-            Text value;
-            std::vector<Text> selectors;
-            std::vector<CssRule> children;
 
-            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data)
+    static constexpr const size_t linksCssFragment = 3;
+    struct CssFragment : public Tape<linksCssFragment> {
+        struct Declaration{};
+        struct AtRuleSingle{};
+        struct AtRuleNested{};
 
-            Data (
-                bool tCanNest = false,
-                const char* tLabel = none,
-                Text&& tValue = none,
-                std::vector<Text>&& tSelectors = {},
-                std::vector<CssRule>&& tChildren = {}
-            ) :
-                canNest{tCanNest},
-                label{tLabel},
-                value{std::move(tValue)},
-                selectors{std::move(tSelectors)},
-                children{std::move(tChildren)}
-            {}
-        };
-
-        mutable Data data;
-
-        CssRule (CssRule&&) = default;            // move construct
-        CssRule& operator= (CssRule&&) = default; // move assign
-        CssRule (const CssRule& other) : data {   // copy construct
-            std::move(other.data)
+        // For rule sets:
+        template<class ...T>
+        CssFragment (Link selector, T&&... declarations) noexcept : Tape<linksCssFragment>{
+            Link(Link::Type::CSS_RULE_START),
+            std::move(selector).setType(Link::Type::CSS_SELECTOR),
+            Link(flattenMany(
+                Link(Link::Type::CSS_BLOCK_START),
+                std::forward<T>(declarations)...,
+                Link(Link::Type::CSS_BLOCK_END)
+            )),
         } {}
-        CssRule& operator= (CssRule& other) {     // copy assign
-            this->data = std::move(other.data);
-            return *this;
-        }
-
-        CssRule (Text&& tSelector) : data {
-            true,
-            none,
-            {},
-            {std::move(tSelector)},
-            {},
+        template<size_t N, class ...T>
+        constexpr CssFragment (Link (&&selectors)[N], T&&... declarations) noexcept : Tape<linksCssFragment>{
+            Link(Link::Type::CSS_RULE_START),
+            Link(fromArray(std::move(selectors)).setType(Link::Type::CSS_SELECTOR)),
+            Link(flattenMany(
+                Link(Link::Type::CSS_BLOCK_START),
+                std::forward<T>(declarations)...,
+                Link(Link::Type::CSS_BLOCK_END)
+            )),
         } {}
-        CssRule (std::initializer_list<Text>&& tSelectors) : data {
-            true,
-            none,
-            {},
-            std::move(tSelectors),
-            {},
+        // For declarations:
+        constexpr explicit CssFragment (Declaration, const char* property, Link&& value) noexcept : Tape<linksCssFragment>{
+            Link(std::move(property), Link::Type::CSS_DECLARATION_PROPERTY),
+            value.setType(Link::Type::CSS_DECLARATION_VALUE),
+            Link(),
         } {}
-        CssRule (Text&& tSelector, std::initializer_list<CssRule>&& tRules) : data {
-            true,
-            none,
-            {},
-            {std::move(tSelector)},
-            std::move(tRules),
+        // For "at" rules with single value:
+        constexpr explicit CssFragment (AtRuleSingle, const char* label, Link&& value) noexcept : Tape<linksCssFragment>{
+            Link(label, Link::Type::CSS_AT_RULE_START),
+            value.setType(Link::Type::CSS_AT_RULE_VALUE),
+            Link(),
         } {}
-        CssRule (std::initializer_list<Text>&& tSelectors, std::initializer_list<CssRule>&& tRules) : data {
-            true,
-            none,
-            {},
-            std::move(tSelectors),
-            std::move(tRules),
-        } {}
-        template <class... T, class = CssRule>
-        CssRule (Text&& tSelector, T&& ...tRules) : data {
-            true,
-            none,
-            {},
-            {std::move(tSelector)},
-            {std::forward<T>(tRules)...},
-        } {}
-        template <class... T, class = CssRule>
-        CssRule (std::initializer_list<Text>&& tSelectors, T&& ...tRules) : data {
-            true,
-            none,
-            {},
-            std::move(tSelectors),
-            {std::forward<T>(tRules)...},
-        } {}
-
-        CssRule (
-            bool tCanNest = false,
-            const char* tLabel = none,
-            Text&& tValue = {},
-            std::vector<Text>&& tSelectors = {},
-            std::vector<CssRule>&& tChildren = {}
-        ) : data {
-            tCanNest,
-            tLabel,
-            std::move(tValue),
-            std::move(tSelectors),
-            std::move(tChildren),
+        // For "at" rules with nested contents:
+        template<size_t N>
+        constexpr explicit CssFragment (AtRuleNested, const char* label, Link&& selector, CssFragment (&&children)[N]) noexcept : Tape<linksCssFragment>{
+            Link(label, Link::Type::CSS_AT_RULE_START),
+            selector.setType(Link::Type::CSS_AT_RULE_SELECTOR),
+            Link(flattenMany(
+                Link(Link::Type::CSS_BLOCK_START),
+                std::move(children),
+                Link(Link::Type::CSS_BLOCK_END)
+            )),
         } {}
     };
 
-    template<const char* const NAME>
-    struct CssProperty : CssRule {
-        CssProperty (Text&& tValue) :
-            CssRule(false, NAME, std::move(tValue), {}, {})
+    struct CssDeclaration : public CssFragment {
+        constexpr CssDeclaration (const char* property, Link&& value) noexcept :
+            CssFragment(CssFragment::Declaration{}, property, std::move(value))
         {}
     };
 
-    template<const char* const PREFIX>
-    struct CssAtSingle : CssRule {
-        CssAtSingle (Text&& tSelector) :
-            CssRule(false, PREFIX, {}, {std::move(tSelector)}, {})
-        {}
-        CssAtSingle (std::initializer_list<Text>&& tSelectors) :
-            CssRule(false, PREFIX, {}, std::move(tSelectors), {})
+    template<const char* LABEL>
+    struct CssDeclarationLabelled : public CssDeclaration {
+        constexpr CssDeclarationLabelled (Link&& value) noexcept :
+            CssDeclaration(LABEL, std::move(value))
         {}
     };
 
-    template<const char* const PREFIX>
-    struct CssAtNested : CssRule {
-        CssAtNested () :
-            CssRule(true, PREFIX, {}, {}, {})
-        {}
-        CssAtNested (Text&& tSelector) :
-            CssRule(true, PREFIX, {}, {std::move(tSelector)}, {})
-        {}
-        CssAtNested (std::initializer_list<Text>&& tSelectors) :
-            CssRule(true, PREFIX, {}, std::move(tSelectors), {})
-        {}
-        CssAtNested (Text&& tSelector, std::initializer_list<CssRule>&& tRules) :
-            CssRule(
-                true,
-                PREFIX,
-                {},
-                {std::move(tSelector)},
-                std::move(tRules)
-            )
-        {}
-        CssAtNested (std::initializer_list<Text>&& tSelectors, std::initializer_list<CssRule>&& tRules) :
-            CssRule(
-                true,
-                PREFIX,
-                {},
-                std::move(tSelectors),
-                std::move(tRules)
-            )
-        {}
-        template <class... T, class = CssRule>
-        CssAtNested (Text&& tSelector, T&& ...tRules) :
-            CssRule(
-                true,
-                PREFIX,
-                {},
-                {std::move(tSelector)},
-                {std::forward<T>(tRules)...}
-            )
-        {}
-        template <class... T, class = CssRule>
-        CssAtNested (std::initializer_list<Text>&& tSelectors, T&& ...tRules) :
-            CssRule(
-                true,
-                PREFIX,
-                {},
-                std::move(tSelectors),
-                {std::forward<T>(tRules)...}
-            )
+    template<const char* LABEL>
+    struct CssAtRuleSingleLabelled : public CssFragment {
+        constexpr CssAtRuleSingleLabelled (Link&& value) noexcept :
+            CssFragment(CssFragment::AtRuleSingle{}, LABEL, std::move(value))
         {}
     };
 
-    struct CssVar : CssRule {
-        CssVar (const char* tName, Text&& tValue) :
-            CssRule(false, tName, std::move(tValue), {}, {})
+    template<const char* LABEL>
+    struct CssAtRuleNestedLabelled : public CssFragment {
+        template<size_t N>
+        constexpr CssAtRuleNestedLabelled (Link&& selector, CssFragment (&&children)[N]) noexcept :
+            CssFragment(CssFragment::AtRuleNested{}, LABEL, std::move(selector), std::move(children))
         {}
     };
 
     namespace exports {
-        template<const char* NAME>
-        using property = CssProperty<NAME>;
-        using rule = CssRule;
-        using styles = std::initializer_list<CssRule>;
-        using prop = CssVar;
+        using prop = CssDeclaration;
+        template<const char* PROP>
+        using property = CssDeclarationLabelled<PROP>;
+        using rule = CssFragment;
+        using styles = std::initializer_list<CssFragment>;
+        using declarations = std::initializer_list<CssDeclaration>;
     }
 }}
 
@@ -377,309 +659,99 @@ namespace Webxx { namespace internal {
 
 
 namespace Webxx { namespace internal {
-    constexpr char doctype[] = "<!doctype html>";
-    constexpr char styleTag[] = "style";
 
-    typedef const char* HtmlAttributeName;
-
-    struct HtmlAttribute {
-        struct Data {
-            HtmlAttributeName name;
-            std::vector<Text> values;
-
-            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data)
-
-            Data (
-                HtmlAttributeName tName = none,
-                std::vector<Text>&& tValues = {}
-            ) :
-                name{tName},
-                values{std::move(tValues)}
-            {}
-        };
-
-        mutable Data data;
-
-        HtmlAttribute (HtmlAttribute&&) = default;              // move construct
-        HtmlAttribute& operator= (HtmlAttribute&&) = default;   // move assign
-        HtmlAttribute (const HtmlAttribute& other) :            // copy construct
-            data {std::move(other.data)}
-        {}
-        HtmlAttribute& operator= (HtmlAttribute& other) {       // copy assign
-            this->data = std::move(other.data);
-            return *this;
-        }
-
-        HtmlAttribute (
-            HtmlAttributeName tName = none,
-            std::vector<Text>&& tValues = {}
-        ) : data {
-            tName,
-            std::move(tValues)
+    template<class ...T>
+    struct HtmlAttribute : public Tape<linkCount<T...>+2> {
+        template<class ...T2>
+        HtmlAttribute (const char* tag, T2&&... children) noexcept : Tape<linkCount<T...>+2>{
+            Link(tag, Link::Type::HTML_ATTR_KEY, Link::Flag::insideTag),
+            Link(std::forward<T2>(children)).setType(Link::Type::HTML_ATTR_VALUE).setFlags(Link::Flag::insideTag)...,
+            Link(tag, Link::Type::HTML_ATTR_END, Link::Flag::insideTag)
         } {}
     };
 
-    template<HtmlAttributeName NAME>
-    struct HtmlAttributeDefined : public HtmlAttribute {
-        HtmlAttributeDefined () :
-            HtmlAttribute(NAME, {})
-        {}
-        HtmlAttributeDefined (std::vector<Text>&& values) :
-            HtmlAttribute(NAME, std::move(values))
-        {}
-        HtmlAttributeDefined (std::initializer_list<Text>&& values) :
-            HtmlAttribute(NAME, std::move(values))
-        {}
-        template <class... T, class = Text>
-        HtmlAttributeDefined (T&& ...values) :
-            HtmlAttribute(NAME, {std::forward<T>(values)...})
-        {}
+    template<class ...T>
+    struct HtmlNode : public Tape<linkCount<T...>+3> {
+        template<class ...A, class ...T2>
+        HtmlNode (const char* tag, TapeFragment&& attributes, T2&&... children) noexcept : Tape<linkCount<T...>+3>{flattenMany(
+            Link(tag, Link::Type::HTML_TAG_START),
+            Link(std::move(attributes)),
+            flattenMany(std::forward<T2>(children)...),
+            Link(tag, Link::Type::HTML_TAG_END)
+        )} {}
+        template<class ...T2>
+        HtmlNode (const char* tag, T2&&... children) noexcept : Tape<linkCount<T...>+3>{flattenMany(
+            Link(tag, Link::Type::HTML_TAG_START),
+            Link(),
+            flattenMany(std::forward<T2>(children)...),
+            Link(tag, Link::Type::HTML_TAG_END)
+        )} {}
     };
 
-    typedef const char* TagName;
-    typedef const char* Prefix;
-    typedef bool SelfClosing;
-
-    enum CollectionTarget {
-        NONE = 0,
-        CSS = 1,
-        SCRIPT = 2,
-        PLACEHOLDER = 3,
-        VARIABLE = 4,
-        HEAD = 5,
+    template<class ...T>
+    struct HtmlNodeSelfClosing : public Tape<linkCount<T...>+2> {
+        template<class ...A, class ...T2>
+        HtmlNodeSelfClosing (const char* tag, TapeFragment&& attributes, T2&&... children) noexcept : Tape<linkCount<T...>+2>{flattenMany(
+            Link(tag, Link::Type::HTML_TAG_START),
+            Link(std::move(attributes)),
+            flattenMany(std::forward<T2>(children)...)
+        )} {}
+        template<class ...T2>
+        HtmlNodeSelfClosing (const char* tag, T2&&... children) noexcept : Tape<linkCount<T...>+2>{flattenMany(
+            Link(tag, Link::Type::HTML_TAG_START_SELF_CLOSE),
+            Link(),
+            flattenMany(std::forward<T2>(children)...)
+        )} {}
     };
 
-    struct HtmlNodeOptions {
-        TagName tagName;
-        Prefix prefix;
-        SelfClosing selfClosing;
-        CollectionTarget gathersCollection;
-        CollectionTarget emitsCollection;
-
-        HtmlNodeOptions (HtmlNodeOptions&&) = default;
-        HtmlNodeOptions& operator= (HtmlNodeOptions&& other) = default;
-        HtmlNodeOptions (const HtmlNodeOptions&) = delete;
-        HtmlNodeOptions& operator= (const HtmlNodeOptions&) = delete;
-
-        HtmlNodeOptions () :
-            tagName{none},
-            prefix{none},
-            selfClosing{false},
-            gathersCollection{NONE},
-            emitsCollection{NONE}
-        {}
-
-        HtmlNodeOptions (
-            TagName tTagName,
-            Prefix tPrefix,
-            SelfClosing tSelfClosing,
-            CollectionTarget tGathersCollection,
-            CollectionTarget tEmitsCollection
-        ) :
-            tagName{tTagName},
-            prefix{tPrefix},
-            selfClosing{tSelfClosing},
-            gathersCollection{tGathersCollection},
-            emitsCollection{tEmitsCollection}
-        {}
+    template<class ...T>
+    struct HtmlNodeNoClosing : public Tape<linkCount<T...>+2> {
+        template<class ...A, class ...T2>
+        HtmlNodeNoClosing (const char* tag, TapeFragment&& attributes, T2&&... children) noexcept : Tape<linkCount<T...>+2>{flattenMany(
+            Link(tag, Link::Type::HTML_TAG_START),
+            Link(std::move(attributes)),
+            flattenMany(std::forward<T2>(children)...),
+            Link(tag, Link::Type::HTML_TAG_END)
+        )} {}
+        template<class ...T2>
+        HtmlNodeNoClosing (const char* tag, T2&&... children) noexcept : Tape<linkCount<T...>+2>{flattenMany(
+            Link(tag, Link::Type::HTML_TAG_START),
+            Link(),
+            flattenMany(std::forward<T2>(children)...)
+        )} {}
     };
-
-    struct HtmlNode;
-
-    typedef std::string_view ComponentName;
-    typedef std::size_t ComponentTypeId;
-    typedef std::function<HtmlNode()> ContentProducer;
-
-    struct HtmlNode {
-        struct Data {
-            HtmlNodeOptions options;
-            std::vector<HtmlAttribute> attributes;
-            std::vector<HtmlNode> children;
-            Text content;
-            ContentProducer contentLazy;
-            std::vector<CssRule> css;
-            ComponentTypeId componentTypeId;
-
-            WEBXX_MOVE_ONLY_CONSTRUCTORS(Data)
-
-            Data (
-                HtmlNodeOptions&& tOptions = {none, none, false, NONE, NONE},
-                std::vector<HtmlAttribute>&& tAttributes = {},
-                std::vector<HtmlNode>&& tChildren = {},
-                Text&& tContent = {},
-                ContentProducer&& tContentLazy = {},
-                std::vector<CssRule>&& tCss = {},
-                ComponentTypeId tComponentTypeId = 0
-            ) :
-                options{std::move(tOptions)},
-                attributes{std::move(tAttributes)},
-                children{std::move(tChildren)},
-                content{std::move(tContent)},
-                contentLazy{std::move(tContentLazy)},
-                css{std::move(tCss)},
-                componentTypeId{tComponentTypeId}
-            {}
-        };
-
-        mutable Data data;
-
-        HtmlNode (HtmlNode&&) = default;            // move construct
-        HtmlNode& operator= (HtmlNode&&) = default; // move assign
-        HtmlNode (const HtmlNode& other) : data {   // copy construct
-            std::move(other.data)
-        } {}
-        HtmlNode& operator= (HtmlNode& other) {     // copy assign
-            this->data = std::move(other.data);
-            return *this;
-        }
-
-        HtmlNode (Placeholder&& tPlaceholder) : data {
-            {none, none, false, PLACEHOLDER, NONE},
-            {},
-            {},
-            std::move(tPlaceholder),
-        } {}
-        HtmlNode (ContentProducer&& tNodeProducer) : data {
-            {none, none, false, NONE, NONE},
-            {},
-            {},
-            {},
-            std::move(tNodeProducer),
-        } {}
-        HtmlNode (std::string&& tContent) : data {
-            {none, none, false, NONE, NONE},
-            {},
-            {},
-            std::move(tContent),
-        } {}
-        HtmlNode (const char* tContent) : data {
-            {none, none, false, NONE, NONE},
-            {},
-            {},
-            tContent,
-        } {}
-        HtmlNode (const std::string& tContent) : data {
-            {none, none, false, NONE, NONE},
-            {},
-            {},
-            tContent,
-        } {}
-        HtmlNode (const std::string_view tContent) : data {
-            {none, none, false, NONE, NONE},
-            {},
-            {},
-            std::move(tContent),
-        } {}
-
-        HtmlNode (
-            HtmlNodeOptions&& tOptions = {none, none, false, NONE, NONE},
-            std::vector<HtmlAttribute>&& tAttributes = {},
-            std::vector<HtmlNode>&& tChildren = {},
-            Text&& tContent = {},
-            ContentProducer&& tContentLazy = {},
-            std::vector<CssRule>&& tCss = {},
-            ComponentTypeId tComponentTypeId = 0
-        ) : data {
-            std::move(tOptions),
-            std::move(tAttributes),
-            std::move(tChildren),
-            std::move(tContent),
-            std::move(tContentLazy),
-            std::move(tCss),
-            tComponentTypeId
-        } {}
-    };
-
-    template<
-        TagName TAG = none,
-        Prefix PREFIX = none,
-        SelfClosing SELF_CLOSING = false,
-        CollectionTarget COLLECTS = NONE,
-        CollectionTarget COLLECTION = NONE
-    >
-    struct HtmlNodeDefined : public HtmlNode {
-        HtmlNodeDefined () :
-            HtmlNode(
-                {TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION}
-            )
-        {}
-        HtmlNodeDefined (std::vector<HtmlNode>&& tChildren) :
-            HtmlNode(
-                {TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION},
-                {},
-                std::move(tChildren)
-            )
-        {}
-        HtmlNodeDefined (std::initializer_list<HtmlNode>&& tChildren) :
-            HtmlNode(
-                {TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION},
-                {},
-                std::move(tChildren)
-            )
-        {}
-        template <class... T, class = HtmlNode>
-        HtmlNodeDefined (std::initializer_list<HtmlAttribute>&& tAttributes, T&& ...tChildren) :
-            HtmlNode(
-                {TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION},
-                std::move(tAttributes),
-                {std::forward<T>(tChildren)...}
-            )
-        {}
-        template <class... T, class = HtmlNode>
-        HtmlNodeDefined (std::vector<HtmlAttribute>&& tAttributes, T&& ...tChildren) :
-            HtmlNode(
-                {TAG, PREFIX, SELF_CLOSING, COLLECTS, COLLECTION},
-                std::move(tAttributes),
-                {std::forward<T>(tChildren)...}
-            )
-        {}
-    };
-
-    struct HtmlStyleNode : HtmlNode {
-        HtmlStyleNode () :
-            HtmlNode({styleTag, none, false, NONE, NONE})
-        {}
-        HtmlStyleNode (std::initializer_list<CssRule>&& tCss) :
-            HtmlNode({styleTag, none, false, NONE, NONE}, {}, {}, {}, {}, std::move(tCss))
-        {}
-        template<typename ...T>
-        HtmlStyleNode (std::initializer_list<HtmlAttribute>&& tAttributes, T&& ...tCss) :
-            HtmlNode({styleTag, none, false, NONE, NONE, NONE}, std::move(tAttributes), {}, {std::forward<T>(tCss)...})
-        {}
-        // HtmlStyleNode (std::initializer_list<HtmlAttributeProxy>&& tAttrs, std::initializer_list<CssRuleProxy>&& tCss) :
-    };
-
-    struct HtmlStyleCollectionNode : HtmlNode {
-        HtmlStyleCollectionNode () :
-            HtmlNode({none, none, false, NONE, CSS})
-        {}
-        HtmlStyleCollectionNode (std::initializer_list<CssRule> &&tCss) :
-            HtmlNode({none, none, false, NONE, CSS}, {}, {}, {}, {}, std::move(tCss))
-        {}
-    };
-
-    typedef HtmlNodeDefined<none, none, false, NONE, HEAD> HtmlHeadCollectionNode;
 
     namespace exports {
         // HTML extensibility:
-        template<TagName TAG>
-        using el = HtmlNodeDefined<TAG>;
-        template<HtmlAttributeName NAME>
-        using attr = HtmlAttributeDefined<NAME>;
+        // template<const char* TAG>
+        // using el = HtmlNodeDefined<TAG>;
+        // template<const char* NAME>
+        // using attr = HtmlAttrDef<NAME>;
 
-        using node = HtmlNode;
-        using nodes = std::vector<HtmlNode>;
-        using children = std::initializer_list<HtmlNode>;
-        using attrs = std::initializer_list<HtmlAttribute>;
+        // using node = HtmlNode;
+        // using nodes = std::vector<HtmlNode>;
+        // using children = std::initializer_list<HtmlNode>;
+        using node = TapeFragment;
+        using nodes = TapeFragment;
+        using children = std::initializer_list<TapeFragment>;
+        using attrs = TapeFragment;
 
         // HTML special purpose nodes:
-        using doc = HtmlNodeDefined<none, doctype>;
-        using text = HtmlNodeDefined<>;
-        using fragment = HtmlNodeDefined<>;
-        using lazy = ContentProducer;
-        using style = HtmlStyleNode;
-        using styleTarget = HtmlNodeDefined<styleTag, none, false, CSS, NONE>;
-        using headTarget = HtmlNodeDefined<none, none, false, HEAD, NONE>;
+        using text = Link;
+
+        struct style : public Tape<3> {
+            style (std::initializer_list<CssFragment> declarations) : Tape<3>{
+                Link(styleTag, Link::Type::HTML_TAG_START),
+                Link(flatten(std::move(declarations))),
+                Link(styleTag, Link::Type::HTML_TAG_END)
+            } {}
+            template<class ...Ts>
+            style (Ts... declarations) : Tape<3>{
+                Link(styleTag, Link::Type::HTML_TAG_START),
+                Link(flattenMany(std::forward<Ts>(declarations)...)),
+                Link(styleTag, Link::Type::HTML_TAG_END)
+            } {}
+        };
     }
 }}
 
@@ -690,75 +762,147 @@ namespace Webxx { namespace internal {
 
 
 namespace Webxx { namespace internal {
+    #ifdef _MSC_VER
+    #define WEBXX_FN_SIG __FUNCSIG__
+    #else
+    #define WEBXX_FN_SIG __PRETTY_FUNCTION__
+    #endif
 
-    struct ComponentBase : public HtmlNode {
-        ComponentBase (
-            const ComponentTypeId tTypeId,
-            HtmlStyleCollectionNode&& tCss,
-            HtmlNode&& tRoot,
-            HtmlHeadCollectionNode&& tHead
-        ) : HtmlNode(
-            {none, none, false, NONE, NONE},
-            {},
-            {
-                std::move(tRoot),
-                std::move(tCss),
-                std::move(tHead),
-            },
-            {},
-            {},
-            {},
-            tTypeId
-        ) {}
-    };
-
+    typedef uint32_t ComHash;
     template <typename T>
-    constexpr size_t ctHash () {
-        size_t hash{0};
+    constexpr ComHash constHash () {
+        ComHash hash{0};
         for (const char& c : WEBXX_FN_SIG) {
-            (hash ^= static_cast<size_t>(c)) <<= 1;
+            (hash ^= static_cast<ComHash>(c)) <<= 1;
         }
         return hash;
     }
 
-    template <typename T>
-    constexpr size_t compileTimeTypeId = ctHash<T>();
+    // Adapted from https://stackoverflow.com/a/74838061
+    constexpr const size_t ComIdLen = 6;
+    typedef std::array<char,ComIdLen+1> ComId;
+    constexpr static const char maps[64] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+    constexpr ComId constStringHash (ComHash hash) {
+        ComId buffer{"000000"};
+        char* c = buffer.end() - 1;
+        do {
+            *--c = maps[hash & 0b111111];
+            hash >>= 6;
+        } while (hash > 0);
+        return buffer;
+    }
 
-    template <class T, size_t K = compileTimeTypeId<T>>
-    struct Component : public ComponentBase {
-        constexpr Component (
-            HtmlNode
-            && tRootNode
-        ) : ComponentBase(
-            K,
-            {},
-            std::move(tRootNode),
-            {}
-        ) {}
-        constexpr Component (
-            HtmlStyleCollectionNode&& tCss,
-            HtmlNode&& tRootNode
-        ) : ComponentBase(
-            K,
-            std::move(tCss),
-            std::move(tRootNode),
-            {}
-        ) {}
-        constexpr Component (
-            HtmlStyleCollectionNode&& tCss,
-            HtmlNode&& tRootNode,
-            HtmlHeadCollectionNode&& tHeadNode
-        ) : ComponentBase(
-            K,
-            std::move(tCss),
-            std::move(tRootNode),
-            std::move(tHeadNode)
-        ) {}
+    template <typename T>
+    constexpr ComHash compileTimeTypeId = constHash<T>();
+
+    template<ComHash K>
+    struct ComponentNode : public Tape<3> { // @todo Perhaps could be compile-time width?
+        typedef std::integral_constant<ComHash, K> hash;
+        constexpr static const ComId id{constStringHash(K)};
+
+        template<size_t N>
+        ComponentNode (Tape<N>&& children) : Tape<3>{
+            Link(id.begin(), Link::Type::COM_START).setSpare(hash::value),
+            Link(std::move(children)),
+            Link(Link::Type::COM_END).setSpare(hash::value),
+        } {}
     };
+
+    template<typename C>
+    struct Component : ComponentNode<compileTimeTypeId<C>> {
+        template<size_t NR>
+        Component (
+            Tape<NR> rootNode
+        ) : ComponentNode<compileTimeTypeId<C>>(flattenMany(
+            std::move(rootNode)
+        )) {}
+        template<size_t NR>
+        Component (
+            Empty,
+            Tape<NR> rootNode
+        ) : ComponentNode<compileTimeTypeId<C>>(flattenMany(
+            std::move(rootNode)
+        )) {}
+        template<size_t NR, size_t NC>
+        Component (
+            CssFragment (&&stylesNode)[NC],
+            Tape<NR> rootNode
+        ) : ComponentNode<compileTimeTypeId<C>>(flattenMany(
+            flatten(std::move(stylesNode)).setFlags(Link::Flag::passComCss),
+            std::move(rootNode)
+        )) {}
+        template<size_t NR>
+        Component (
+            std::initializer_list<CssFragment> stylesNode,
+            Tape<NR> rootNode
+        ) : ComponentNode<compileTimeTypeId<C>>(flattenMany(
+            flatten(std::move(stylesNode)).setFlags(Link::Flag::passComCss),
+            std::move(rootNode)
+        )) {}
+        template<size_t NR, typename ...Ts>
+        Component (
+            Empty,
+            Tape<NR> rootNode,
+            TapeFragment headNodes
+        ) : ComponentNode<compileTimeTypeId<C>>(flattenMany(
+            std::move(rootNode),
+            std::move(headNodes).setFlags(Link::Flag::passComHead)
+        )) {}
+        template<size_t NR, size_t NC, typename ...Ts>
+        Component (
+            CssFragment (&&stylesNode)[NC],
+            Tape<NR> rootNode,
+            TapeFragment headNodes
+        ) : ComponentNode<compileTimeTypeId<C>>(flattenMany(
+            flatten(std::move(stylesNode)).setFlags(Link::Flag::passComCss),
+            std::move(rootNode),
+            std::move(headNodes).setFlags(Link::Flag::passComHead)
+        )) {}
+        template<size_t NR>
+        Component (
+            std::initializer_list<CssFragment> stylesNode,
+            Tape<NR> rootNode,
+            TapeFragment headNodes
+        ) : ComponentNode<compileTimeTypeId<C>>(flattenMany(
+            flatten(std::move(stylesNode)).setFlags(Link::Flag::passComCss),
+            std::move(rootNode),
+            std::move(headNodes).setFlags(Link::Flag::passComHead)
+        )) {}
+    };
+
+    struct ComCssTarget : public Tape<3> {
+        ComCssTarget () : Tape<3>{
+            Link(styleTag, Link::Type::HTML_TAG_START),
+            Link(Link::Type::BRANCH_COM_CSS),
+            Link(styleTag, Link::Type::HTML_TAG_END),
+        } {}
+    };
+
+    struct ComHtmlTarget : public Tape<1> {
+        ComHtmlTarget () : Tape<1>{
+            Link(Link::Type::BRANCH_COM_HEAD),
+        } {}
+    };
+
+    static constexpr const size_t comAttrLen = 9 + ComIdLen + 2;
+    inline constexpr std::array<char,comAttrLen> makeComponentTypeIdAttribute (const char* comId) noexcept {
+        std::array<char,comAttrLen> out{" lang=\"x-000000\""};
+        std::copy(comId, comId + ComIdLen, out.begin() + 9);
+        return out;
+    }
+
+    static constexpr const size_t comSelectorLen = 8 + ComIdLen + 2;
+    inline constexpr std::array<char,comSelectorLen> makeComponentTypeIdSelector (const char* comId) noexcept {
+        std::array<char,comSelectorLen> out{":lang(x-000000)"};
+        std::copy(comId, comId + ComIdLen, out.begin() + 8);
+        return out;
+    }
 
     namespace exports {
         template <class T>
         using component = Component<T>;
+        using styleTarget = ComCssTarget;
+        using headTarget = ComHtmlTarget;
     }
 }}
 
@@ -769,387 +913,324 @@ namespace Webxx { namespace internal {
 
 
 namespace Webxx { namespace internal {
-    constexpr char componentScopePrefix[] = "data-c";
+    static const Link nullLink{};
 
-    struct CollectedCss {
-        const ComponentTypeId componentTypeId;
-        const std::vector<CssRule>& css;
-
-        bool operator == (const CollectedCss &other) const noexcept {
-            return (other.componentTypeId == componentTypeId);
-        }
-    };
-
-    struct CollectedHtml {
-        const ComponentTypeId componentTypeId;
-        const std::vector<HtmlNode>& nodes;
-
-        bool operator == (const CollectedHtml &other) const noexcept {
-            return (other.componentTypeId == componentTypeId);
-        }
-    };
-}}
-
-template<>
-struct std::hash<Webxx::internal::CollectedCss> {
-    std::size_t operator() (const Webxx::internal::CollectedCss& collectedCss) const noexcept {
-        return collectedCss.componentTypeId;
+    inline const std::string_view noopPopulator (
+        const std::string_view& value,
+        const std::string_view&
+    ) {
+        return value;
     }
-};
 
-template<>
-struct std::hash<Webxx::internal::CollectedHtml> {
-    std::size_t operator() (const Webxx::internal::CollectedHtml& collectedHtml) const noexcept {
-        return collectedHtml.componentTypeId;
-    }
-};
-
-
-namespace Webxx { namespace internal {
-    typedef std::function<void(const std::string_view&, std::string&)> RenderReceiverFn;
-    constexpr std::size_t renderBufferDefaultSize{16 * 1024};
-
-    inline void renderToInternalBuffer (const std::string_view& data, std::string& buffer) {
+    inline void appendToInternalBuffer (
+        const std::string_view& data,
+        std::string& buffer
+    ) {
         buffer.append(data);
     }
 
-    struct RenderOptions {
-        mutable PlaceholderPopulator placeholderPopulator{noopPopulator};
-        mutable RenderReceiverFn renderReceiverFn{renderToInternalBuffer};
-        mutable std::size_t renderBufferSize{renderBufferDefaultSize};
-        mutable std::string renderBuffer{};
+    struct RenderMachine {
+        enum class Pass : uint8_t {
+            MAIN     = 0b001,
+            COM_CSS  = 0b010,
+            COM_HEAD = 0b100,
+        };
 
-        RenderOptions()
-        {}
-        RenderOptions(PlaceholderPopulator tPlaceholderPopulator) :
-            placeholderPopulator{tPlaceholderPopulator}
-        {}
-        RenderOptions(PlaceholderPopulator tPlaceholderPopulator, RenderReceiverFn tReceiverFn) :
-            placeholderPopulator{tPlaceholderPopulator},
-            renderReceiverFn{tReceiverFn},
-            renderBufferSize(0)
-        {}
-        RenderOptions(PlaceholderPopulator tPlaceholderPopulator, RenderReceiverFn tReceiverFn, std::size_t tRenderBufferSize) :
-            placeholderPopulator{tPlaceholderPopulator},
-            renderReceiverFn(tReceiverFn),
-            renderBufferSize(tRenderBufferSize)
-        {}
-    };
+        struct Options {
+            static constexpr const std::size_t renderBufferDefaultSize{4 * 1024};
 
-    typedef std::unordered_set<CollectedCss> CollectedCsses;
-    typedef std::unordered_set<CollectedHtml> CollectedHtmls;
+            typedef std::function<const std::string_view(
+                const std::string_view&,
+                const std::string_view&
+            )> PlaceholderPopulator;
+            typedef std::function<void(
+                const std::string_view&,
+                std::string&
+            )> RenderReceiverFn;
 
-    struct Collector {
-        CollectedCsses csses;
-        CollectedHtmls heads;
-        RenderOptions options;
+            PlaceholderPopulator placeholderPopulator{noopPopulator};
+            RenderReceiverFn renderReceiverFn{appendToInternalBuffer};
+            std::size_t renderBufferSize{renderBufferDefaultSize};
+            Pass pass{Pass::MAIN};
 
-        Collector(const RenderOptions& tOptions) :
-            csses{}, heads{}, options{tOptions} {};
+            Options() :
+                placeholderPopulator{noopPopulator}
+            {}
+            Options(PlaceholderPopulator tPlaceholderPopulator) :
+                placeholderPopulator{tPlaceholderPopulator}
+            {}
+            Options(PlaceholderPopulator tPlaceholderPopulator, RenderReceiverFn tReceiverFn) :
+                placeholderPopulator{tPlaceholderPopulator},
+                renderReceiverFn{tReceiverFn},
+                renderBufferSize(0)
+            {}
+            Options(PlaceholderPopulator tPlaceholderPopulator, RenderReceiverFn tReceiverFn, std::size_t tRenderBufferSize) :
+                placeholderPopulator{tPlaceholderPopulator},
+                renderReceiverFn(tReceiverFn),
+                renderBufferSize(tRenderBufferSize)
+            {}
+        };
 
-        void collect (HtmlNode* node, const ComponentTypeId currentComponent) {
-            ComponentTypeId nextComponent = currentComponent;
-            if (node->data.componentTypeId) {
-                nextComponent = node->data.componentTypeId;
-            }
+        struct Token {
+            static constexpr const char* htmlAttrAssign = "=\"";
+            static constexpr const char* htmlTagCloseEnd = ">";
+            static constexpr const char* htmlTagCloseStart = "</";
+            static constexpr const char* htmlTagOpenEnd = ">";
+            static constexpr const char* htmlTagOpenEndSelfClose = "/>";
+            static constexpr const char* htmlTagOpenStart = "<";
+            static constexpr const char* braceClose = "}";
+            static constexpr const char* braceOpen = "{";
+            static constexpr const char* comma = ",";
+            static constexpr const char* colon = ":";
+            static constexpr const char* quote = "\"";
+            static constexpr const char* semicolon = ";";
+            static constexpr const char* space = " ";
+        };
 
-            if (node->data.options.emitsCollection == HEAD && !node->data.children.empty()) {
-                heads.insert({nextComponent, node->data.children});
-            }
+        // Input:
+        const Link* tapeBegin;
+        const Link* tapeEnd;
+        Options options;
 
-            if (node->data.options.emitsCollection == CSS && !node->data.css.empty()) {
-                csses.insert({nextComponent, node->data.css});
-            }
+        // Output:
+        std::string buffer;
 
-            if (node->data.contentLazy) {
-                node->data.children.push_back(node->data.contentLazy());
-            }
+        // Internal state:
+        Pass pass{Pass::MAIN};
+        const Link* prev{&nullLink};
+        std::deque<const Link*> componentStack{};
+        std::unordered_set<ComHash> seenComponentHashes{};
+        bool isComponentRootElement{false};
+        bool hasHtmlTagOpen{false};
+        bool isHtmlTagSelfClosing{false};
 
-            this->collect(&(node->data.children), nextComponent);
-        }
+        // Emitted pass/flag combinations:
+        static constexpr const uint8_t cPassMFlagN =
+            static_cast<uint8_t>(Pass::MAIN);
+        static constexpr const uint8_t cPassCFlagC =
+            static_cast<uint8_t>(Pass::COM_CSS) | Link::Flag::passComCss;
+        static constexpr const uint8_t cPassHFlagH =
+            static_cast<uint8_t>(Pass::COM_HEAD) | Link::Flag::passComHead;
 
-        template<class T>
-        void collect (std::vector<T>* tNodes, const ComponentTypeId currentComponent) {
-            for (auto &node : *tNodes) {
-                this->collect(&node, currentComponent);
-            }
-        }
+        // Entrypoint:
 
-        void collect (const void*, const ComponentTypeId) {}
-    };
-
-    struct Renderer {
-        const Collector& collector;
-        const RenderOptions& options;
-
-        Renderer(const Collector& tCollector, const RenderOptions& tOptions) :
-            collector{tCollector}, options{tOptions}
+        template<typename C>
+        RenderMachine (
+            const C& tape,
+            Options&& tOptions
+        ) :
+            tapeBegin{&*tape.begin()},
+            tapeEnd{&*tape.end()},
+            options{std::move(tOptions)},
+            pass{options.pass}
         {
-            options.renderBuffer.reserve(options.renderBufferSize);
-            if (!options.placeholderPopulator) {
-                options.placeholderPopulator = noopPopulator;
-            }
+            this->buffer.reserve(this->options.renderBufferSize);
+            this->renderPass(this->tapeBegin, this->tapeEnd);
         }
 
-        private:
+        // Helpers:
 
-        inline void sendToRender (const std::string_view& rendered) {
-            options.renderReceiverFn(rendered, options.renderBuffer);
-        }
-
-        public:
-
-        const std::string componentName (ComponentTypeId type) {
-            return std::to_string(type);
-        }
-
-        void render (const HtmlAttribute& attribute, const ComponentTypeId) {
-            sendToRender(attribute.data.name);
-            if (!attribute.data.values.empty()) {
-                sendToRender("=\"");
-                bool shouldSeparate = false;
-                for(auto &value : attribute.data.values) {
-                    if (shouldSeparate) {
-                        sendToRender(" ");
-                    }
-
-                    switch (value.type) {
-                        case Text::Type::LITERAL:
-                            sendToRender(value.view);
-                            break;
-                        case Text::Type::PLACEHOLDER:
-                            sendToRender(options.placeholderPopulator(value.view, attribute.data.name));
-                            break;
-                    }
-
-                    shouldSeparate = true;
+        inline constexpr bool shouldEmit (uint8_t flags) {
+            switch(static_cast<uint8_t>(this->pass) | (flags & Link::Flag::maskPass)) {
+                case cPassMFlagN: {
+                    return true;
+                };
+                case cPassCFlagC:
+                case cPassHFlagH: {
+                    return this->seenComponentHashes.count(this->componentStack.front()->spare) == 0;
                 }
-                sendToRender("\"");
+                default: {
+                    // Not a combination of pass and flags that should be emitted.
+                    return false;
+                }
             }
         }
 
-        void render (const std::initializer_list<HtmlAttribute>& attributes, const ComponentTypeId currentComponent) {
-            for (auto &attribute : attributes) {
-                sendToRender(" ");
-                render(attribute, currentComponent);
-            }
-        }
-
-        void render (const std::vector<HtmlAttribute>& attributes, const ComponentTypeId currentComponent) {
-            for (auto &attribute : attributes) {
-                sendToRender(" ");
-                render(attribute, currentComponent);
-            }
-        }
-
-        void render (const HtmlNode& node, const ComponentTypeId currentComponent) {
-            ComponentTypeId nextComponent = currentComponent;
-            if (node.data.componentTypeId) {
-                nextComponent = node.data.componentTypeId;
-            }
-
-            if (node.data.options.emitsCollection != NONE) {
-                // Nodes belonging to a collection will be rendered where they are collected:
-                return;
-            }
-
-            if (strlen(node.data.options.prefix)) {
-                sendToRender(node.data.options.prefix);
-            }
-
-            if (strlen(node.data.options.tagName)) {
-                sendToRender("<");
-                sendToRender(node.data.options.tagName);
-                if (!node.data.attributes.empty()) {
-                    render(node.data.attributes, nextComponent);
-                }
-                if (nextComponent) {
-                    sendToRender(" ");
-                    sendToRender(componentScopePrefix);
-                    sendToRender(componentName(nextComponent));
-                }
-                if (node.data.options.selfClosing) {
-                    sendToRender("/");
-                }
-                sendToRender(">");
-            }
-
-            if (node.data.options.gathersCollection == PLACEHOLDER) {
-                sendToRender(options.placeholderPopulator(node.data.content.view, node.data.options.tagName));
-            } else {
-                sendToRender(node.data.content.view);
-            }
-
-            if (!node.data.children.empty()) {
-                render(node.data.children, nextComponent);
-            }
-
-            if (!node.data.css.empty()) {
-                render(node.data.css, 0);
-            }
-
-            if (node.data.options.gathersCollection == CSS) {
-                render(collector.csses, nextComponent);
-            }
-
-            if (node.data.options.gathersCollection == HEAD) {
-                render(collector.heads, nextComponent);
-            }
-
-            if ((!node.data.options.selfClosing) && strlen(node.data.options.tagName)) {
-                sendToRender("</");
-                sendToRender(node.data.options.tagName);
-                sendToRender(">");
-            }
-        }
-
-        void render (const std::initializer_list<HtmlNode>& tNodes, const ComponentTypeId currentComponent) {
-            for (auto &node : tNodes) {
-                render(node, currentComponent);
-            }
-        }
-
-        void render (const std::vector<HtmlNode>& tNodes, const ComponentTypeId currentComponent) {
-            for (auto &node : tNodes) {
-                render(node, currentComponent);
-            }
-        }
-
-        void render(const std::initializer_list<Text>& selectors, const ComponentTypeId currentComponent) {
-            bool shouldSeparate = false;
-            for (auto &selector : selectors) {
-                if (shouldSeparate) {
-                    sendToRender(",");
-                }
-
-                sendToRender(selector.view);
-
-                if (currentComponent) {
-                    sendToRender("[");
-                    sendToRender(componentScopePrefix);
-                    sendToRender(componentName(currentComponent));
-                    sendToRender("]");
-                }
-                shouldSeparate = true;
-            }
-        }
-
-        void render(const std::vector<Text>& selectors, const ComponentTypeId currentComponent) {
-            bool shouldSeparate = false;
-            for (auto &selector : selectors) {
-                if (shouldSeparate) {
-                    sendToRender(",");
-                }
-
-                sendToRender(selector.view);
-
-                if (currentComponent) {
-                    sendToRender("[");
-                    sendToRender(componentScopePrefix);
-                    sendToRender(componentName(currentComponent));
-                    sendToRender("]");
-                }
-                shouldSeparate = true;
-            }
-        }
-
-        void render (const CssRule& rule, const ComponentTypeId currentComponent) {
-            if (!rule.data.canNest) {
-                // Single line rule:
-                sendToRender(rule.data.label);
-                if (!rule.data.selectors.empty()) {
-                    sendToRender(" ");
-                    render(rule.data.selectors, 0);
-                }
-                if (!rule.data.value.view.empty()) {
-                    sendToRender(":");
-                    sendToRender(rule.data.value.view);
-                }
-                sendToRender(";");
-            } else {
-                // Nested rule:
-                if(strlen(rule.data.label)) {
-                    // @rule (has a label and selectors):
-                    sendToRender(rule.data.label);
-                    sendToRender(" ");
-                    render(rule.data.selectors, 0);
+        template<typename ...Ts>
+        inline constexpr void emit (uint8_t flags, const Ts&... views) {
+            if (shouldEmit(flags)) {
+                if (flags & Link::Flag::placeholder) {
+                    (options.renderReceiverFn(options.placeholderPopulator(views, none), this->buffer),...); // @todo Provide context.
                 } else {
-                    // Style rule (has no label, only selectors):
-                    render(rule.data.selectors, currentComponent);
+                    (options.renderReceiverFn(views, this->buffer),...);
+                }
+            }
+        }
+
+        // Force close of any open HTML tag:
+        inline void maybeEndHtmlOpenTag (uint8_t flags = 0) {
+            flags &= Link::Flag::maskPass;
+            if (this->hasHtmlTagOpen) {
+                this->emit(flags, this->isHtmlTagSelfClosing ? Token::htmlTagOpenEndSelfClose : Token::htmlTagOpenEnd);
+                this->hasHtmlTagOpen = false;
+                this->isHtmlTagSelfClosing = false;
+            }
+        }
+
+        // Main loop:
+        // template<typename T>
+        inline void renderPass (const Link* passBegin, const Link* passEnd) {
+            const Link* curr = passBegin;
+            while (curr != passEnd) {
+                const Link& link = *curr;
+
+                // Automatically close any dangling open HTML tags if present:
+                if (!(link.flags & Link::Flag::insideTag)) {
+                    this->maybeEndHtmlOpenTag(link.flags);
                 }
 
-                sendToRender("{");
+                switch (link.type) {
+                    // Branches into other passes:
+                    case Link::Type::BRANCH_DYNAMIC: {
+                        // Enter into nested tape:
+                        this->renderPass(&*(link.dynamic->begin()), &*(link.dynamic->end()));
+                    } break;
+                    case Link::Type::BRANCH_LAZY: {
+                        // Enter into tape generated at render time:
+                        auto generated = (*(link.generator))();
+                        this->renderPass(&*(generated.begin()), &*(generated.end()));
+                    } break;
+                    case Link::Type::BRANCH_COM_CSS: {
+                        // Begin a pass to gather up component CSS (only from main pass):
+                        if (this->pass == Pass::MAIN) {
+                            this->pass = Pass::COM_CSS;
+                            this->seenComponentHashes.clear();
+                            this->renderPass(this->tapeBegin, this->tapeEnd);
+                            this->pass = Pass::MAIN;
+                        }
+                    } break;
+                    case Link::Type::BRANCH_COM_HEAD: {
+                        // Begin a pass to gather up component <head> HTML (only from main pass):
+                        if (this->pass == Pass::MAIN) {
+                            this->pass = Pass::COM_HEAD;
+                            this->seenComponentHashes.clear();
+                            this->renderPass(this->tapeBegin, this->tapeEnd);
+                            this->pass = Pass::MAIN;
+                        }
+                    } break;
 
-                for (auto &child : rule.data.children) {
-                    render(child, currentComponent);
+                    // Components:
+                    case Link::Type::COM_END: {
+                        this->componentStack.pop_front();
+                        this->seenComponentHashes.insert(link.spare);
+                    } break;
+                    case Link::Type::COM_START: {
+                        this->componentStack.push_front(&link);
+                        this->isComponentRootElement = true;
+                    } break;
+
+                    // CSS:
+                    case Link::Type::CSS_AT_RULE_START: {
+                        this->emit(link.flags, link.view);
+                    } break;
+                    case Link::Type::CSS_AT_RULE_SELECTOR: {
+                        this->emit(link.flags, Token::space, link.view);
+                    } break;
+                    case Link::Type::CSS_AT_RULE_VALUE: {
+                        this->emit(link.flags, Token::space, link.view, Token::semicolon);
+                    } break;
+                    case Link::Type::CSS_BLOCK_END: {
+                        this->emit(link.flags, Token::braceClose);
+                    } break;
+                    case Link::Type::CSS_BLOCK_START: {
+                        this->emit(link.flags, Token::braceOpen);
+                    } break;
+                    case Link::Type::CSS_DECLARATION_PROPERTY: {
+                        this->emit(link.flags, link.view, Token::colon);
+                    } break;
+                    case Link::Type::CSS_DECLARATION_VALUE: {
+                        this->emit(link.flags, link.view, Token::semicolon);
+                    } break;
+                    case Link::Type::CSS_SELECTOR: {
+                        if (prev->type == Link::Type::CSS_SELECTOR) {
+                            this->emit(link.flags,  Token::comma);
+                        }
+                        if (link.flags & Link::Flag::passComCss) {
+                            auto selector = makeComponentTypeIdSelector(this->componentStack.front()->view.ptr);
+                            this->emit(link.flags, link.view, std::string_view(selector.begin(), comSelectorLen - 1));
+                        } else {
+                            this->emit(link.flags, link.view);
+                        }
+                    } break;
+
+                    // HTML:
+                    case Link::Type::HTML_ATTR_KEY: {
+                        this->emit(link.flags, prev->type == Link::Type::NONE ? none : Token::space, link.view);
+                    } break;
+                    case Link::Type::HTML_ATTR_VALUE: {
+                        this->emit(link.flags, prev->type == Link::Type::HTML_ATTR_KEY ? Token::htmlAttrAssign : Token::space, link.view);
+                    } break;
+                    case Link::Type::HTML_ATTR_END: {
+                        this->emit(link.flags, prev->type == Link::Type::HTML_ATTR_KEY ? none : Token::quote);
+                    } break;
+                    case Link::Type::HTML_TAG_START_SELF_CLOSE: {
+                        this->isHtmlTagSelfClosing = true;
+                    };  // Intentional fall through.
+                    case Link::Type::HTML_TAG_START: {
+                        this->emit(link.flags, Token::htmlTagOpenStart, link.view);
+                        if (this->isComponentRootElement) {
+                            auto attr = makeComponentTypeIdAttribute(this->componentStack.front()->view.ptr);
+                            this->emit(link.flags, std::string_view(attr.begin(), comAttrLen - 1));
+                            this->isComponentRootElement = false;
+                        }
+                        this->hasHtmlTagOpen = true;
+                    } break;
+                    case Link::Type::HTML_TAG_END: {
+                        this->emit(link.flags, Token::htmlTagCloseStart, link.view, Token::htmlTagCloseEnd);
+                    } break;
+
+                    // Text:
+                    case Link::Type::TEXT: {
+                        this->emit(link.flags, link.view);
+                    } break;
+
+                    // Skip:
+                    case Link::Type::NONE:
+                    case Link::Type::CSS_RULE_START: {
+                    } break;
                 }
 
-                sendToRender("}");
-            }
-        }
+                if (!(link.flags & Link::Flag::invisible)) {
+                    this->prev = &link;
+                }
 
-        void render (const std::initializer_list<CssRule>& css, const ComponentTypeId currentComponent) {
-            for (auto &rule : css) {
-                render(rule, currentComponent);
+                ++curr;
             }
-        }
 
-        void render (const std::vector<CssRule>& css, const ComponentTypeId currentComponent) {
-            for (auto &rule : css) {
-                render(rule, currentComponent);
-            }
-        }
-
-        void render (const CollectedCsses& collectedCsses, const ComponentTypeId) {
-            for (auto &collectedCss : collectedCsses) {
-                render(collectedCss.css, collectedCss.componentTypeId);
-            }
-        }
-
-        void render (const CollectedHtmls& collectedHtmls, const ComponentTypeId) {
-            for (auto &collectedHtml : collectedHtmls) {
-                render(collectedHtml.nodes, collectedHtml.componentTypeId);
-            }
+            this->maybeEndHtmlOpenTag(this->prev->flags);
         }
     };
 
     namespace exports {
-        template<typename V>
-        Collector collect (V&& tNode, const RenderOptions& options) {
-            Collector collector(options);
-            collector.collect(&tNode, 0);
-            return collector;
+        using PlaceholderPopulator = RenderMachine::Options::PlaceholderPopulator;
+
+        template<size_t T>
+        inline std::string render (Tape<T>&& thing, RenderMachine::Options options = {}) {
+            return std::move(RenderMachine(thing, std::move(options)).buffer);
         }
 
-        template<typename V>
-        Collector collect (V&& tNode) {
-            return collect(std::forward<V>(tNode), {});
+        template<size_t T>
+        inline std::string render (const Tape<T>& thing, RenderMachine::Options options = {}) {
+            return std::move(RenderMachine(thing, std::move(options)).buffer);
         }
 
-        template<typename T>
-        std::string render (T&& thing, const RenderOptions&& options) {
-            Collector collector = collect(thing, options);
-            Renderer renderer(collector, options);
-            renderer.render(std::forward<T>(thing), 0);
-            return options.renderBuffer;
+        inline std::string render (FlexiTape&& thing, RenderMachine::Options options = {}) {
+            return std::move(RenderMachine(thing, std::move(options)).buffer);
         }
 
-        template<typename T>
-        std::string render (T&& thing) {
-            return render(std::forward<T>(thing), {});
+        inline std::string render (const FlexiTape& thing, RenderMachine::Options options = {}) {
+            return std::move(RenderMachine(thing, std::move(options)).buffer);
         }
 
         template<typename T>
-        std::string renderCss (T&& thing, const RenderOptions&& options) {
-            Collector collector = collect(thing, options);
-            Renderer renderer(collector, options);
-            renderer.render(collector.csses, 0);
-            return options.renderBuffer;
+        inline std::string render (std::initializer_list<T> thing, RenderMachine::Options options = {}) {
+            return render(flatten(std::move(thing)), std::move(options));
         }
 
         template<typename T>
-        std::string renderCss (T&& thing) {
-            return renderCss(std::forward<T>(thing), {});
+        inline std::string renderCss (T&& thing, RenderMachine::Options options = {}) {
+            options.pass = RenderMachine::Pass::COM_CSS;
+            return render(std::forward<T>(thing), std::move(options));
         }
     }
 }}
@@ -1166,11 +1247,11 @@ namespace Webxx { namespace internal {
 
         template<class T, typename F>
         fragment each (const T& items, F&& cb) {
-            std::vector<HtmlNode> tNodes;
+            FlexiTape tNodes;
             tNodes.reserve(items.size());
 
             for (const auto& item : items) {
-                tNodes.push_back(cb(item));
+                tNodes.push_back(Link(cb(item)));
             }
 
             return fragment{std::move(tNodes)};
@@ -1178,11 +1259,11 @@ namespace Webxx { namespace internal {
 
         template<class T, typename F>
         fragment each (T &&items, F&& cb) {
-            std::vector<HtmlNode>  tNodes;
+            FlexiTape tNodes;
             tNodes.reserve(items.size());
 
             for (auto&& item : items) {
-                tNodes.push_back(cb(std::forward<decltype(item)>(item)));
+                tNodes.push_back(Link(cb(std::forward<decltype(item)>(item))));
             }
 
             return fragment{std::move(tNodes)};
@@ -1190,11 +1271,11 @@ namespace Webxx { namespace internal {
 
         template<typename C, class T>
         fragment each (const T& items) {
-            std::vector<HtmlNode>  tNodes;
+            FlexiTape tNodes;
             tNodes.reserve(items.size());
 
             for (const auto& item : items) {
-                tNodes.push_back(C{item});
+                tNodes.push_back(Link(C{item}));
             }
 
             return fragment{std::move(tNodes)};
@@ -1202,11 +1283,11 @@ namespace Webxx { namespace internal {
 
         template<typename C, class T, typename V = typename std::remove_reference<T>::type::value_type>
         fragment each (T&& items) {
-            std::vector<HtmlNode> tNodes;
+            FlexiTape tNodes;
             tNodes.reserve(items.size());
 
             for (auto&& item : items) {
-                tNodes.push_back(C{std::forward<V>(item)});
+                tNodes.push_back(Link(C{std::forward<V>(item)}));
             }
 
             return fragment{std::move(tNodes)};
@@ -1218,13 +1299,26 @@ namespace Webxx { namespace internal {
         };
 
         template<class T, typename F>
-        fragment loop (const T& items, F&& cb) {
-            std::vector<HtmlNode> tNodes;
+        typename std::enable_if_t<has_size_v<T>, Tape<T::size::value>> loop (T&& items, F&& cb) {
+            Tape<T::size::value> tNodes;
+
+            Loop loop {0, T::size::value};
+            for (size_t i = 0; i < T::size::value; ++i) {
+                loop.index = i;
+                tNodes[i] = Link(cb(items[i], loop));
+            }
+
+            return tNodes;
+        }
+
+        template<class T, typename F>
+        fragment loop (T&& items, F&& cb) {
+            FlexiTape tNodes;
             tNodes.reserve(items.size());
 
             Loop loop {0, items.size()};
-            for (const auto& item : items) {
-                tNodes.push_back(std::move(cb(item, loop)));
+            for (auto&& item : items) {
+                tNodes.push_back(Link(cb(std::forward<decltype(item)>(item), loop)));
                 ++loop.index;
             }
 
@@ -1232,13 +1326,26 @@ namespace Webxx { namespace internal {
         }
 
         template<class T, typename F>
-        fragment loop (T&& items, F&& cb) {
-            std::vector<HtmlNode>  tNodes;
+        typename std::enable_if_t<has_size_v<T>, Tape<T::size::value>> loop (T& items, F&& cb) {
+            Tape<T::size::value> tNodes;
+
+            Loop loop {0, T::size::value};
+            for (size_t i = 0; i < T::size::value; ++i) {
+                loop.index = i;
+                tNodes[i] = Link(cb(items[i], loop));
+            }
+
+            return tNodes;
+        }
+
+        template<class T, typename F>
+        fragment loop (const T& items, F&& cb) {
+            FlexiTape tNodes;
             tNodes.reserve(items.size());
 
             Loop loop {0, items.size()};
-            for (auto&& item : items) {
-                tNodes.push_back(std::move(cb(std::forward<decltype(item)>(item), loop)));
+            for (const auto& item : items) {
+                tNodes.push_back(Link(cb(item, loop)));
                 ++loop.index;
             }
 
@@ -1247,36 +1354,35 @@ namespace Webxx { namespace internal {
 
         template<typename C, class T>
         fragment loop (const T& items) {
-            std::vector<HtmlNode>  tNodes;
+            FlexiTape tNodes;
             tNodes.reserve(items.size());
 
             Loop loop {0, items.size()};
             for (const auto& item : items) {
-                tNodes.push_back(C{item, loop});
+                tNodes.push_back(Link(C{item, loop}));
                 ++loop.index;
             }
 
-            return fragment{std::move(tNodes)};
+            return tNodes;
         }
 
         template<typename C, class T, typename V = typename std::remove_reference<T>::type::value_type>
         fragment loop (T&& items) {
-            std::vector<HtmlNode>  tNodes;
+            FlexiTape tNodes;
             tNodes.reserve(items.size());
 
             Loop loop {0, items.size()};
             for (auto&& item : items) {
-                tNodes.push_back(C{std::forward<V>(item), loop});
+                tNodes.push_back(Link(C{std::forward<V>(item), loop}));
                 ++loop.index;
             }
-
-            return fragment{std::move(tNodes)};
+            return tNodes;
         }
 
         template<typename T, typename F>
         fragment maybe (T&& condition, F&& cb) {
             if (condition) {
-                return fragment{{}, cb()};
+                return fragment{cb()};
             }
             return fragment{};
         }
@@ -1284,17 +1390,17 @@ namespace Webxx { namespace internal {
         template<typename T, typename V, typename F>
         fragment maybe (T&& condition, V&& forward, F&& cb) {
             if (condition) {
-                return fragment{{}, cb(std::forward<V>(forward))};
+                return fragment{cb(std::forward<V>(forward))};
             }
             return fragment{};
         }
 
         template<typename T, typename F>
-        HtmlAttribute maybeAttr (T&& condition, F&& attr) {
+        fragment maybeAttr (T&& condition, F&& attr) {
             if (condition) {
                 return attr;
             }
-            return HtmlAttribute{};
+            return fragment{};
         }
     }
 }}
@@ -1305,9 +1411,62 @@ namespace Webxx { namespace internal {
 ////|          |////
 
 
+#define WEBXX_CSS_PROP(NAME)\
+    namespace internal::res { static constexpr const char NAME ## WXP[] = #NAME; }\
+    using NAME = Webxx::internal::CssDeclarationLabelled<internal::res::NAME ## WXP>
+#define WEBXX_CSS_PROP_ALIAS(NAME,ALIAS)\
+    namespace internal::res { static constexpr const char ALIAS ## WXP[] = #NAME; }\
+    using ALIAS = Webxx::internal::CssDeclarationLabelled<internal::res::ALIAS ## WXP>
+#define WEBXX_CSS_AT_SINGLE(NAME,ALIAS)\
+    namespace internal::res { static constexpr const char ALIAS ## WXR[] = #NAME; }\
+    using ALIAS = Webxx::internal::CssAtRuleSingleLabelled<internal::res::ALIAS ## WXR>
+#define WEBXX_CSS_AT_NESTED(NAME,ALIAS)\
+    namespace internal::res { static constexpr const char ALIAS ## WXR[] = #NAME; }\
+    using ALIAS = Webxx::internal::CssAtRuleNestedLabelled<internal::res::ALIAS ## WXR>
+#define WEBXX_HTML_EL(TAG)\
+    template <class ...T> struct TAG : Webxx::internal::HtmlNode<T...> {\
+        template<class ...TC> TAG (TC&&... c) noexcept : Webxx::internal::HtmlNode<TC...>(#TAG, std::forward<TC>(c)...) {}\
+        template<class ...TC> TAG (Webxx::internal::TapeFragment&& a, TC&&... c) noexcept : Webxx::internal::HtmlNode<TC...>(#TAG, std::move(a), std::forward<TC>(c)...) {}\
+    };\
+    template <typename ...T> TAG (T&&...) -> TAG <T...>;\
+    template <typename ...T> TAG (Webxx::internal::TapeFragment&&, T&&...) -> TAG <T...>
+#define WEBXX_HTML_EL_ALIAS(TAG,ALIAS)\
+    template <class ...T> struct ALIAS : Webxx::internal::HtmlNode<T...> {\
+        template<class ...TC> ALIAS (TC&&... c) noexcept : Webxx::internal::HtmlNode<TC...>(#TAG, std::forward<TC>(c)...) {}\
+        template<class ...TC> ALIAS (Webxx::internal::TapeFragment&& a, TC&&... c) noexcept : Webxx::internal::HtmlNode<TC...>(#TAG, std::move(a), std::forward<TC>(c)...) {}\
+    };\
+    template <typename ...T> ALIAS (T&&...) -> ALIAS <T...>;\
+    template <typename ...T> ALIAS (Webxx::internal::TapeFragment&&, T&&...) -> ALIAS <T...>
+#define WEBXX_HTML_EL_SELF_CLOSING(TAG)\
+    template <class ...T> struct TAG : Webxx::internal::HtmlNodeSelfClosing<T...> {\
+        template<class ...TC> TAG (TC&&... c) noexcept : Webxx::internal::HtmlNodeSelfClosing<TC...>(#TAG, std::forward<TC>(c)...) {}\
+        template<class ...TC> TAG (Webxx::internal::TapeFragment&& a, TC&&... c) noexcept : Webxx::internal::HtmlNodeSelfClosing<TC...>(#TAG, std::move(a), std::forward<TC>(c)...) {}\
+    };\
+    template <typename ...T> TAG (T&&...) -> TAG <T...>;\
+    template <typename ...T> TAG (internal::TapeFragment&&, T&&...) -> TAG <T...>
+#define WEBXX_HTML_EL_NO_CLOSING_ALIAS(TAG,ALIAS)\
+    template <class ...T> struct ALIAS : Webxx::internal::HtmlNodeNoClosing<T...> {\
+        template<class ...TC> ALIAS (TC&&... c) noexcept : Webxx::internal::HtmlNodeNoClosing<TC...>(#TAG, std::forward<TC>(c)...) {}\
+        template<class ...TC> ALIAS (Webxx::internal::TapeFragment&& a, TC&&... c) noexcept : Webxx::internal::HtmlNodeNoClosing<TC...>(#TAG, std::move(a), std::forward<TC>(c)...) {}\
+    };\
+    template <typename ...T> ALIAS (T&&...) -> ALIAS <T...>;\
+    template <typename ...T> ALIAS (Webxx::internal::TapeFragment&&, T&&...) -> ALIAS <T...>
+#define WEBXX_HTML_ATTR(NAME)\
+    template <class ...T> struct _ ## NAME : Webxx::internal::HtmlAttribute<T...> {\
+        template<class ...TC> _ ## NAME (TC&&... c) noexcept : Webxx::internal::HtmlAttribute<TC...>(#NAME, std::forward<TC>(c)...) {}\
+    };\
+    template <typename ...T> _ ## NAME (T&&...) -> _ ## NAME <T...>
+#define WEBXX_HTML_ATTR_ALIAS(NAME,ALIAS)\
+    template <class ...T> struct _ ## ALIAS : Webxx::internal::HtmlAttribute<T...> {\
+        template<class ...TC> _ ## ALIAS (TC&&... c) noexcept : Webxx::internal::HtmlAttribute<TC...>(#NAME, std::forward<TC>(c)...) {}\
+    };\
+    template <typename ...T> _ ## ALIAS (T&&...) -> _ ## ALIAS <T...>
+
+
 namespace Webxx {
     // Modules:
     using namespace internal::exports;
+
 
     // CSS @ rules:
     WEBXX_CSS_AT_SINGLE(@charset,atCharset);
@@ -1845,6 +2004,7 @@ namespace Webxx {
     WEBXX_HTML_EL(dfn);
     WEBXX_HTML_EL(dialog);
     WEBXX_HTML_EL_ALIAS(div,dv);
+    WEBXX_HTML_EL_NO_CLOSING_ALIAS(!doctype html,doc);
     WEBXX_HTML_EL(dl);
     WEBXX_HTML_EL(dt);
     WEBXX_HTML_EL(em);

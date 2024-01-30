@@ -59,7 +59,7 @@ TEST_SUITE("README") {
                 },
                 body {
                     // Set attributes:
-                    {_class{"dark", is1MVisit ? "party" : ""}},
+                    _class{"dark", is1MVisit ? "party" : ""},
                     // Combine components, elements and text:
                     ToDoList{std::move(toDoItems)},
                     hr {},
@@ -69,7 +69,7 @@ TEST_SUITE("README") {
                             h1 {
                                 "Congratulations you are the 1 millionth visitor!",
                             },
-                            a { { _href{"/prize" } },
+                            a { _href{"/prize" },
                                 "Click here to claim your prize",
                             },
                         };

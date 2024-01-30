@@ -251,7 +251,7 @@ TEST_SUITE("Node") {
     }
 
     TEST_CASE("Node can have attributes with children and content") {
-        h1 node{{_class{"title"}, _id{"theTitle"}}, "Hello", a{" world"}, "!"};
+        h1 node{_class{"title"}, _id{"theTitle"}, "Hello", a{" world"}, "!"};
 
         SUBCASE("Node with attributes and mixed children and content can be rendered") {
             CHECK(render(node) == "<h1 class=\"title\" id=\"theTitle\">Hello<a> world</a>!</h1>");
@@ -274,7 +274,7 @@ TEST_SUITE("Node") {
                 std::move(title),
             },
             body {
-                h1{{_class{"title"}},
+                h1{_class{"title"},
                     "Hello!"
                 },
                 p{"Goodbye."},
@@ -295,7 +295,7 @@ TEST_SUITE("Node") {
     }
 
     TEST_CASE("Self-closing node can have attributes") {
-        img node{{_class{"logo"}, _href{"/logo.gif"}}};
+        img node{_class{"logo"}, _href{"/logo.gif"}};
 
         SUBCASE("Self-closing node with attributes can be rendered") {
             CHECK(render(node) == "<img class=\"logo\" href=\"/logo.gif\"/>");

@@ -17,11 +17,11 @@ TEST_SUITE("Component") {
                     },
                 },
                 dv{
-                    h1{{_class{"title"}}, "Hello"},
-                    p{{_class{"summary"}}, "World."},
+                    h1{_class{"title"}, "Hello"},
+                    p{_class{"summary"}, "World."},
                 },
                 {
-                    link{{_rel{"test"}}},
+                    link{_rel{"test"}},
                 },
             } {}
         };
@@ -109,7 +109,7 @@ TEST_SUITE("Component") {
                 {
                     {".a", color{"green"}},
                 },
-                dv{{_class{"a"}},
+                dv{_class{"a"},
                     msg,
                 },
             } {}
@@ -120,7 +120,7 @@ TEST_SUITE("Component") {
                 {
                     {".b", color{"blue"}},
                 },
-                dv{{_class{"b"}},
+                dv{_class{"b"},
                     std::move(comA),
                     "Hello B",
                 },

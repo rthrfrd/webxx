@@ -24,7 +24,7 @@ TEST_SUITE("Variations") {
             html{
                 head{
                     title{"Hello title!"},
-                    link{{_rel{"stylesheet"}, _href{"./styles.css"}}},
+                    link{_rel{"stylesheet"}, _href{"./styles.css"}},
                     style{{".a", fontWeight{"bold"}}, {".b", opacity("0.5")}},
                 },
                 body{

@@ -98,7 +98,7 @@ static void multiElementInja (benchmark::State& state) {
 BENCHMARK(multiElementInja);
 
 std::string renderMultiElementWebxx (Input a, Input b, Input c) {
-    return render(dv{{_class{b}},
+    return render(dv{_class{b},
         h1{a},
         p{c},
     });
@@ -182,7 +182,7 @@ BENCHMARK(loop1kInja);
 std::string render1kElementWebxx (Input a, Input b, Input c) {
     return render(ol{
         loop(nItems, [a,b,c] (const auto&, const Loop& loop) -> auto {
-            return li{{_class{b}},
+            return li{_class{b},
                 std::to_string(loop.index),
                 h1{a},
                 p{c},
